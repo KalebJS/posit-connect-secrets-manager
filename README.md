@@ -16,16 +16,17 @@ Posit Connect stores environment variables per content item. Managing them one a
 ## Install
 
 ```bash
-git clone https://github.com/kalebsmith/posit-connect-secrets-manager
-cd posit-connect-secrets-manager
-cargo build --release
-# binary at target/release/posit-secrets
+uv tool install posit-connect-secrets-manager
 ```
 
-Or run directly:
+Or from source (requires Rust):
 
 ```bash
-cargo run
+uv tool install git+https://github.com/KalebJS/posit-connect-secrets-manager
+```
+
+```bash
+cargo install --git https://github.com/KalebJS/posit-connect-secrets-manager
 ```
 
 ## Configuration
