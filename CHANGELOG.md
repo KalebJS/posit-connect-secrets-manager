@@ -1,3 +1,9 @@
+## 0.3.2 (2026-04-14)
+
+### Fix
+
+- load corporate CA bundle from SSL_CERT_FILE/SSL_CERT_DIR
+
 ## 0.3.1 (2026-04-14)
 
 ### Fix
