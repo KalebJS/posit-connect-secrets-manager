@@ -1,3 +1,9 @@
+## 0.3.0 (2026-04-14)
+
+### Feat
+
+- **projects**: filter list to owner/editor roles only
+
 ## 0.2.2 (2026-04-14)
 
 ### Fix
