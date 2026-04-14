@@ -1,3 +1,10 @@
+## 0.3.1 (2026-04-14)
+
+### Fix
+
+- **env-vars**: handle string-array response and per-project error state
+- revert reqwest to rustls-tls (cross-compilation)
+
 ## 0.3.0 (2026-04-14)
 
 ### Fix
