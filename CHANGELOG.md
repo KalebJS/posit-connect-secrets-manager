@@ -1,3 +1,10 @@
+## 0.2.1 (2026-04-14)
+
+### Fix
+
+- use __api__ path prefix for all Posit Connect endpoints
+- remove pypi support
+
 ## 0.2.0 (2026-04-14)
 
 ### Feat

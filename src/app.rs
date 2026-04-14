@@ -1,6 +1,6 @@
-use std::collections::HashSet;
 use chrono::Utc;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use std::collections::HashSet;
 use tokio::sync::mpsc;
 
 use crate::api::client::ConnectClient;
@@ -101,8 +101,14 @@ pub struct EnvVarRow {
 
 pub enum AppEvent {
     ProjectsFetched(Vec<ContentItem>),
-    EnvVarsFetched { guid: String, vars: Vec<EnvVar> },
-    SyncComplete { _guid: String, result: Result<(), String> },
+    EnvVarsFetched {
+        guid: String,
+        vars: Vec<EnvVar>,
+    },
+    SyncComplete {
+        _guid: String,
+        result: Result<(), String>,
+    },
     FetchError(String),
 }
 
@@ -306,7 +312,10 @@ impl App {
                 match client.set_env_vars(&guid, &merged).await {
                     Ok(()) => {
                         let _ = tx
-                            .send(AppEvent::SyncComplete { _guid: guid, result: Ok(()) })
+                            .send(AppEvent::SyncComplete {
+                                _guid: guid,
+                                result: Ok(()),
+                            })
                             .await;
                     }
                     Err(e) => {
@@ -328,7 +337,10 @@ impl App {
                 StatusLevel::Info,
             );
         } else {
-            self.set_status("No env vars to sync (projects have no vars).".into(), StatusLevel::Info);
+            self.set_status(
+                "No env vars to sync (projects have no vars).".into(),
+                StatusLevel::Info,
+            );
         }
     }
 
@@ -374,7 +386,10 @@ impl App {
                         match client.get_env_vars(&guid_clone).await {
                             Ok(vars) => {
                                 let _ = tx
-                                    .send(AppEvent::EnvVarsFetched { guid: guid_clone, vars })
+                                    .send(AppEvent::EnvVarsFetched {
+                                        guid: guid_clone,
+                                        vars,
+                                    })
                                     .await;
                             }
                             Err(e) => {
@@ -687,7 +702,12 @@ impl App {
                 // Replace the empty-key placeholder with the typed key, then edit value
                 let keys: Vec<String> = self.vault.entries.keys().cloned().collect();
                 if let Some(old_key) = keys.get(idx).cloned() {
-                    let old_val = self.vault.entries.get(&old_key).cloned().unwrap_or_default();
+                    let old_val = self
+                        .vault
+                        .entries
+                        .get(&old_key)
+                        .cloned()
+                        .unwrap_or_default();
                     self.vault.entries.shift_remove(&old_key);
 
                     if !new_value.is_empty() {

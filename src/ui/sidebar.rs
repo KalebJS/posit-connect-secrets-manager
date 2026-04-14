@@ -1,15 +1,19 @@
+use super::theme::*;
+use crate::app::{App, Page};
 use ratatui::{
     layout::{Alignment, Rect},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem},
     Frame,
 };
-use crate::app::{App, Page};
-use super::theme::*;
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let focused = app.sidebar_focused;
-    let border_style = if focused { style_accent() } else { style_border() };
+    let border_style = if focused {
+        style_accent()
+    } else {
+        style_border()
+    };
 
     let pages = [
         Page::ProjectList,
@@ -22,7 +26,13 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .map(|page| {
             let is_current = *page == app.page;
-            let arrow = if is_current && focused { "▶" } else if is_current { "·" } else { " " };
+            let arrow = if is_current && focused {
+                "▶"
+            } else if is_current {
+                "·"
+            } else {
+                " "
+            };
             let label = format!(" {} {}", arrow, page.label());
             let style = if is_current {
                 style_selected()

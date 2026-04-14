@@ -1,3 +1,5 @@
+use crate::app::App;
+use crate::ui::theme::*;
 use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::Style,
@@ -5,12 +7,14 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
-use crate::app::App;
-use crate::ui::theme::*;
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let focused = !app.sidebar_focused;
-    let border_style = if focused { style_accent() } else { style_border() };
+    let border_style = if focused {
+        style_accent()
+    } else {
+        style_border()
+    };
 
     let outer_block = Block::default()
         .title(Span::styled(" Settings ", style_header()))
@@ -52,7 +56,15 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         };
 
         let (label_style, value_style, field_border) = if is_selected {
-            (style_accent(), if is_editing { style_selected() } else { style_normal() }, style_accent())
+            (
+                style_accent(),
+                if is_editing {
+                    style_selected()
+                } else {
+                    style_normal()
+                },
+                style_accent(),
+            )
         } else {
             (style_dim(), style_normal(), style_border())
         };

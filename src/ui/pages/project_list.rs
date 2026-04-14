@@ -1,3 +1,5 @@
+use crate::app::{App, LoadState};
+use crate::ui::theme::*;
 use ratatui::{
     layout::{Alignment, Rect},
     style::Style,
@@ -5,16 +7,16 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, List, ListItem},
     Frame,
 };
-use crate::app::{App, LoadState};
-use crate::ui::theme::*;
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let focused = !app.sidebar_focused;
-    let border_style = if focused { style_accent() } else { style_border() };
+    let border_style = if focused {
+        style_accent()
+    } else {
+        style_border()
+    };
 
     let mut items: Vec<ListItem> = Vec::new();
-    let mut flat_idx: usize = 0;
-
     if app.projects.is_empty() {
         let msg = match &app.load_state {
             LoadState::Loading => format!("  {} Fetching projects…", app.spinner()),
@@ -24,7 +26,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         items.push(ListItem::new(Line::from(Span::styled(msg, style_dim()))));
     }
 
-    for project in &app.projects {
+    for (flat_idx, project) in app.projects.iter().enumerate() {
         let is_selected = flat_idx == app.project_list_selected;
         let is_expanded = app.project_expanded.contains(&project.guid);
         let expand_icon = if is_expanded { "▾" } else { "▸" };
@@ -37,7 +39,10 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         };
 
         let guid_short: String = project.guid.chars().take(8).collect();
-        let label = format!("  {} {}  {}{}", expand_icon, display_name, guid_short, loading_badge);
+        let label = format!(
+            "  {} {}  {}{}",
+            expand_icon, display_name, guid_short, loading_badge
+        );
 
         let style = if is_selected && focused {
             style_selected()
@@ -45,7 +50,6 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             style_normal()
         };
         items.push(ListItem::new(Line::from(Span::styled(label, style))));
-        flat_idx += 1;
 
         if is_expanded {
             if project.env_vars.is_empty() && matches!(project.load_state, LoadState::Idle) {
@@ -69,11 +73,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                         Style::default().fg(COLOR_SUCCESS).bg(COLOR_BG),
                     )
                 } else {
-                    (
-                        "○",
-                        "  [NOT IN VAULT]".to_string(),
-                        style_dim(),
-                    )
+                    ("○", "  [NOT IN VAULT]".to_string(), style_dim())
                 };
                 let line = format!("      {} {}{}", dot, var.name, suffix);
                 items.push(ListItem::new(Line::from(Span::styled(line, style))));
@@ -82,7 +82,11 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let title = format!(" Projects ({}) ", app.projects.len());
-    let hint = if focused { " [Enter: expand  ←/Esc: sidebar] " } else { "" };
+    let hint = if focused {
+        " [Enter: expand  ←/Esc: sidebar] "
+    } else {
+        ""
+    };
 
     let block = Block::default()
         .title(Span::styled(title, style_header()))

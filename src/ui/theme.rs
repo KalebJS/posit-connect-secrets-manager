@@ -3,8 +3,8 @@ use ratatui::style::{Color, Modifier, Style};
 // Palette
 pub const COLOR_BG: Color = Color::Rgb(18, 18, 24);
 pub const COLOR_PRIMARY: Color = Color::Rgb(135, 206, 235); // sky blue
-pub const COLOR_ACCENT: Color = Color::Rgb(255, 140, 0);    // orange
-pub const COLOR_DIM: Color = Color::Rgb(80, 100, 120);      // muted blue-gray
+pub const COLOR_ACCENT: Color = Color::Rgb(255, 140, 0); // orange
+pub const COLOR_DIM: Color = Color::Rgb(80, 100, 120); // muted blue-gray
 pub const COLOR_ERROR: Color = Color::Rgb(220, 80, 80);
 pub const COLOR_SUCCESS: Color = Color::Rgb(100, 200, 120);
 pub const COLOR_BORDER: Color = COLOR_PRIMARY;

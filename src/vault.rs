@@ -21,7 +21,11 @@ impl Vault {
         } else {
             IndexMap::new()
         };
-        Ok(Self { path, entries, dirty: false })
+        Ok(Self {
+            path,
+            entries,
+            dirty: false,
+        })
     }
 
     pub fn load_empty() -> Self {

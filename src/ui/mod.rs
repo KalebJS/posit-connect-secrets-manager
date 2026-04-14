@@ -3,6 +3,7 @@ pub mod sidebar;
 pub mod status_bar;
 pub mod theme;
 
+use crate::app::{App, Page};
 use ratatui::{
     layout::{Constraint, Layout},
     style::Style,
@@ -10,7 +11,6 @@ use ratatui::{
     Frame,
 };
 use theme::COLOR_BG;
-use crate::app::{App, Page};
 
 pub fn render(f: &mut Frame, app: &mut App) {
     let area = f.area();
@@ -19,18 +19,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
     f.render_widget(Block::default().style(Style::default().bg(COLOR_BG)), area);
 
     // Split: [body] / [status bar]
-    let main_chunks = Layout::vertical([
-        Constraint::Min(0),
-        Constraint::Length(1),
-    ])
-    .split(area);
+    let main_chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(area);
 
     // Split body: [sidebar] | [content]
-    let body_chunks = Layout::horizontal([
-        Constraint::Length(22),
-        Constraint::Min(0),
-    ])
-    .split(main_chunks[0]);
+    let body_chunks =
+        Layout::horizontal([Constraint::Length(22), Constraint::Min(0)]).split(main_chunks[0]);
 
     sidebar::render(f, app, body_chunks[0]);
 

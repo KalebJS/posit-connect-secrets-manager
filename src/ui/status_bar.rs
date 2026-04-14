@@ -1,3 +1,5 @@
+use super::theme::*;
+use crate::app::{App, LoadState, StatusLevel};
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -5,8 +7,6 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
-use crate::app::{App, LoadState, StatusLevel};
-use super::theme::*;
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let line = if let Some((msg, level, _)) = &app.status_message {

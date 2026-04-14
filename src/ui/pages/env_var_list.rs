@@ -1,3 +1,5 @@
+use crate::app::App;
+use crate::ui::theme::*;
 use ratatui::{
     layout::{Alignment, Constraint, Rect},
     style::Style,
@@ -5,12 +7,14 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Cell, Row, Table},
     Frame,
 };
-use crate::app::App;
-use crate::ui::theme::*;
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let focused = !app.sidebar_focused;
-    let border_style = if focused { style_accent() } else { style_border() };
+    let border_style = if focused {
+        style_accent()
+    } else {
+        style_border()
+    };
 
     let header = Row::new(vec![
         Cell::from("Env Var Key").style(style_header()),
@@ -58,7 +62,11 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     let title = format!(" Env Vars ({}) ", app.env_var_rows.len());
-    let hint = if focused { " [↑↓: navigate  ←/Esc: sidebar] " } else { "" };
+    let hint = if focused {
+        " [↑↓: navigate  ←/Esc: sidebar] "
+    } else {
+        ""
+    };
 
     let block = Block::default()
         .title(Span::styled(title, style_header()))
