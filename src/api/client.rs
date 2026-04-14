@@ -19,7 +19,37 @@ impl ConnectClient {
     pub fn new(base_url: impl Into<String>, api_key: impl Into<String>) -> Self {
         Self {
             inner: Arc::new(ClientInner {
-                client: reqwest::Client::new(),
+                client: {
+                    // Build a client that trusts corporate CA bundle if SSL_CERT_FILE or SSL_CERT_DIR are set
+                    let mut builder = reqwest::Client::builder();
+
+                    // Load single PEM file from SSL_CERT_FILE
+                    if let Ok(path) = std::env::var("SSL_CERT_FILE") {
+                        if let Ok(pem) = std::fs::read(&path) {
+                            if let Ok(cert) = reqwest::Certificate::from_pem(&pem) {
+                                builder = builder.add_root_certificate(cert);
+                            }
+                        }
+                    }
+
+                    // Load all *.pem files from SSL_CERT_DIR
+                    if let Ok(dir) = std::env::var("SSL_CERT_DIR") {
+                        if let Ok(entries) = std::fs::read_dir(&dir) {
+                            for entry in entries.flatten() {
+                                let path = entry.path();
+                                if path.extension().and_then(|s| s.to_str()) == Some("pem") {
+                                    if let Ok(pem) = std::fs::read(&path) {
+                                        if let Ok(cert) = reqwest::Certificate::from_pem(&pem) {
+                                            builder = builder.add_root_certificate(cert);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    builder.build().expect("failed to build reqwest client")
+                },
                 base_url: base_url.into().trim_end_matches('/').to_string(),
                 api_key: api_key.into(),
             }),
