@@ -35,9 +35,9 @@ Heavy work (HTTP calls to Posit Connect) always happens in `tokio::spawn` tasks 
 ### Posit Connect API
 
 - **Auth header**: `Authorization: Key <api_key>`
-- `GET /api/v1/content` → list user's content items
-- `GET /api/v1/content/{guid}/environment` → `Vec<EnvVar>`
-- `PATCH /api/v1/content/{guid}/environment` → full replacement; code always safe-merges (fetches current vars first, overlays vault values) before PATCHing
+- `GET /__api__/v1/content` → list user's content items
+- `GET /__api__/v1/content/{guid}/environment` → `Vec<EnvVar>`
+- `PATCH /__api__/v1/content/{guid}/environment` → full replacement; code always safe-merges (fetches current vars first, overlays vault values) before PATCHing
 
 ### Navigation model
 

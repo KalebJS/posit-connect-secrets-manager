@@ -30,7 +30,7 @@ impl ConnectClient {
     }
 
     pub async fn list_content(&self) -> Result<Vec<ContentItem>, AppError> {
-        let url = format!("{}/api/v1/content", self.inner.base_url);
+        let url = format!("{}/__api__/v1/content", self.inner.base_url);
         let resp = self
             .inner
             .client
@@ -71,7 +71,7 @@ impl ConnectClient {
     }
 
     pub async fn get_env_vars(&self, guid: &str) -> Result<Vec<EnvVar>, AppError> {
-        let url = format!("{}/api/v1/content/{}/environment", self.inner.base_url, guid);
+        let url = format!("{}/__api__/v1/content/{}/environment", self.inner.base_url, guid);
         let resp = self
             .inner
             .client
@@ -93,7 +93,7 @@ impl ConnectClient {
 
     /// PATCH replaces the full env var set — we always send the safe-merged list.
     pub async fn set_env_vars(&self, guid: &str, vars: &[EnvVar]) -> Result<(), AppError> {
-        let url = format!("{}/api/v1/content/{}/environment", self.inner.base_url, guid);
+        let url = format!("{}/__api__/v1/content/{}/environment", self.inner.base_url, guid);
         let resp = self
             .inner
             .client
