@@ -1,5 +1,9 @@
 ## 0.3.0 (2026-04-14)
 
+### Fix
+
+- revert reqwest to rustls-tls (fix cross‑compilation)
+
 ### Feat
 
 - **projects**: filter list to owner/editor roles only
