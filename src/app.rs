@@ -351,6 +351,10 @@ impl App {
     pub fn handle_app_event(&mut self, event: AppEvent) {
         match event {
             AppEvent::ProjectsFetched(items) => {
+                let items: Vec<ContentItem> = items
+                    .into_iter()
+                    .filter(|i| matches!(i.app_role.as_deref(), Some("owner") | Some("editor")))
+                    .collect();
                 self.projects.clear();
                 self.pending_fetches = items.len();
 

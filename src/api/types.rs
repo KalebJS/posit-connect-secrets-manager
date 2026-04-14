@@ -5,6 +5,7 @@ pub struct ContentItem {
     pub guid: String,
     pub name: String,
     pub title: Option<String>,
+    pub app_role: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
