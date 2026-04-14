@@ -1,6 +1,7 @@
 use super::types::{ContentItem, EnvVar};
 use crate::error::AppError;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -91,7 +92,31 @@ impl ConnectClient {
             )));
         }
 
-        Ok(resp.json::<Vec<EnvVar>>().await?)
+        let text = resp.text().await?;
+
+        // Connect returns a plain string array ["VAR_NAME", ...] (names only).
+        // Older/alternate versions may return [{name, value}] or {"KEY": "VALUE"}.
+        if let Ok(names) = serde_json::from_str::<Vec<String>>(&text) {
+            return Ok(names
+                .into_iter()
+                .map(|name| EnvVar { name, value: None })
+                .collect());
+        }
+        if let Ok(vars) = serde_json::from_str::<Vec<EnvVar>>(&text) {
+            return Ok(vars);
+        }
+        if let Ok(map) = serde_json::from_str::<HashMap<String, Option<String>>>(&text) {
+            return Ok(map
+                .into_iter()
+                .map(|(name, value)| EnvVar { name, value })
+                .collect());
+        }
+
+        Err(AppError::Api(format!(
+            "Unexpected env var response for {}: {}",
+            guid,
+            &text[..text.len().min(200)]
+        )))
     }
 
     /// PATCH replaces the full env var set — we always send the safe-merged list.

@@ -105,6 +105,10 @@ pub enum AppEvent {
         guid: String,
         vars: Vec<EnvVar>,
     },
+    EnvVarsFetchError {
+        guid: String,
+        error: String,
+    },
     SyncComplete {
         _guid: String,
         result: Result<(), String>,
@@ -397,7 +401,12 @@ impl App {
                                     .await;
                             }
                             Err(e) => {
-                                let _ = tx.send(AppEvent::FetchError(e.to_string())).await;
+                                let _ = tx
+                                    .send(AppEvent::EnvVarsFetchError {
+                                        guid: guid_clone,
+                                        error: e.to_string(),
+                                    })
+                                    .await;
                             }
                         }
                     });
@@ -424,6 +433,22 @@ impl App {
                     self.set_status("Projects loaded successfully".into(), StatusLevel::Success);
                 }
                 self.rebuild_env_var_rows();
+            }
+
+            AppEvent::EnvVarsFetchError { guid, error } => {
+                if let Some(project) = self.projects.iter_mut().find(|p| p.guid == guid) {
+                    project.load_state = LoadState::Error(error.clone());
+                }
+                if self.pending_fetches > 0 {
+                    self.pending_fetches -= 1;
+                }
+                if self.pending_fetches == 0 {
+                    self.load_state = LoadState::Idle;
+                }
+                self.set_status(
+                    format!("Error loading env vars: {}", error),
+                    StatusLevel::Error,
+                );
             }
 
             AppEvent::SyncComplete { _guid, result } => match result {
