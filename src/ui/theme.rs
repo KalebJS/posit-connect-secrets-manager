@@ -1,12 +1,22 @@
 use ratatui::style::{Color, Modifier, Style};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ThemeVariant {
     #[default]
     OneDark,
     OneLight,
+}
+
+impl<'de> Deserialize<'de> for ThemeVariant {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        Ok(match s.as_str() {
+            "onelight" => ThemeVariant::OneLight,
+            _ => ThemeVariant::OneDark, // "onedark" + legacy "inherit"/"sky-orange"
+        })
+    }
 }
 
 impl ThemeVariant {
