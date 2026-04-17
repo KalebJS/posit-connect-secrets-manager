@@ -11,6 +11,23 @@ use crate::ui::theme::Palette;
 use crate::vault::Vault;
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn expand_tilde(path: &str) -> std::path::PathBuf {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest);
+        }
+    } else if path == "~" {
+        if let Some(home) = dirs::home_dir() {
+            return home;
+        }
+    }
+    std::path::PathBuf::from(path)
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -207,7 +224,7 @@ impl App {
         let config = Config::load()?;
 
         let vault = if !config.vault_path.is_empty() {
-            Vault::load(&config.vault_path)?
+            Vault::load(expand_tilde(&config.vault_path))?
         } else {
             Vault::load_empty()
         };
@@ -1403,7 +1420,7 @@ impl App {
             2 => {
                 self.config.vault_path = value.clone();
                 if !value.is_empty() {
-                    match Vault::load(&value) {
+                    match Vault::load(expand_tilde(&value)) {
                         Ok(v) => {
                             self.vault = v;
                             self.rebuild_env_var_rows();
