@@ -75,7 +75,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
         if is_expanded {
             let url = format!(
-                "      {} {}/content/{}",
+                "      {} {}/connect/#/apps/{}",
                 "🔗",
                 app.config.server_url.trim_end_matches('/'),
                 project.guid

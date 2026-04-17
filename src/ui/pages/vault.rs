@@ -3,22 +3,10 @@ use crate::ui::theme::*;
 use ratatui::{
     layout::{Alignment, Constraint, Rect},
     style::Style,
-    text::{Line, Span, Text},
+    text::Span,
     widgets::{Block, BorderType, Borders, Cell, Row, Table, TableState},
     Frame,
 };
-
-/// Splits `s` into chunks of at most `width` characters for display.
-fn wrap_at(s: &str, width: usize) -> Vec<String> {
-    if width < 4 || s.is_empty() {
-        return vec![s.to_string()];
-    }
-    let chars: Vec<char> = s.chars().collect();
-    if chars.len() <= width {
-        return vec![s.to_string()];
-    }
-    chars.chunks(width).map(|c| c.iter().collect()).collect()
-}
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let focused = !app.sidebar_focused;
@@ -34,10 +22,6 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     ])
     .height(1)
     .bottom_margin(1);
-
-    // Compute approximate value-column width for wrapping.
-    // Layout: 2 border chars + 1 column-spacing = 3 overhead; value col is ~60% of the rest.
-    let val_col_width = (area.width.saturating_sub(3) as usize * 60 / 100).max(10);
 
     let editing_idx = app.vault_editing;
     let filtering = !app.filter_query.is_empty();
@@ -58,7 +42,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             .map(|(vis_i, (orig_i, k, v))| {
                 let is_selected = vis_i == app.filter_selected && focused;
                 let is_editing = editing_idx == Some(*orig_i);
-                vault_row(is_selected, is_editing, k, v, val_col_width, app)
+                vault_row(is_selected, is_editing, k, v, app)
             })
             .collect()
     } else {
@@ -69,7 +53,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             .map(|(i, (k, v))| {
                 let is_selected = i == app.vault_selected && focused;
                 let is_editing = editing_idx == Some(i);
-                vault_row(is_selected, is_editing, k, v, val_col_width, app)
+                vault_row(is_selected, is_editing, k, v, app)
             })
             .collect()
     };
@@ -117,7 +101,6 @@ fn vault_row<'a>(
     is_editing: bool,
     k: &'a str,
     v: &'a str,
-    val_col_width: usize,
     app: &'a App,
 ) -> Row<'a> {
     if is_editing {
@@ -144,18 +127,10 @@ fn vault_row<'a>(
         } else {
             style_normal()
         };
-        let wrapped = wrap_at(v, val_col_width);
-        let height = wrapped.len() as u16;
-        let val_text = Text::from(
-            wrapped
-                .iter()
-                .map(|l| Line::from(Span::styled(l.clone(), val_style)))
-                .collect::<Vec<_>>(),
-        );
         Row::new(vec![
             Cell::from(k.to_string()).style(key_style),
-            Cell::from(val_text),
+            Cell::from(v.to_string()).style(val_style),
         ])
-        .height(height)
+        .height(1)
     }
 }

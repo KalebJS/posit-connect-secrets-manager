@@ -3,22 +3,10 @@ use crate::ui::theme::*;
 use ratatui::{
     layout::{Alignment, Constraint, Rect},
     style::Style,
-    text::{Line, Span, Text},
+    text::Span,
     widgets::{Block, BorderType, Borders, Cell, Row, Table, TableState},
     Frame,
 };
-
-/// Splits `s` into chunks of at most `width` characters for display.
-fn wrap_at(s: &str, width: usize) -> Vec<String> {
-    if width < 4 || s.is_empty() {
-        return vec![s.to_string()];
-    }
-    let chars: Vec<char> = s.chars().collect();
-    if chars.len() <= width {
-        return vec![s.to_string()];
-    }
-    chars.chunks(width).map(|c| c.iter().collect()).collect()
-}
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let focused = !app.sidebar_focused;
@@ -34,9 +22,6 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     ])
     .height(1)
     .bottom_margin(1);
-
-    // Value column is ~60% of the inner area width.
-    let val_col_width = (area.width.saturating_sub(3) as usize * 60 / 100).max(10);
 
     let filtering = !app.filter_query.is_empty();
     let filtered_rows: Vec<(usize, &crate::app::EnvVarRow)> = app
@@ -67,19 +52,11 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                     style_normal()
                 };
 
-                let wrapped = wrap_at(val, val_col_width);
-                let height = wrapped.len() as u16;
-                let val_text = Text::from(
-                    wrapped
-                        .iter()
-                        .map(|l| Line::from(Span::styled(l.clone(), val_style)))
-                        .collect::<Vec<_>>(),
-                );
                 Row::new(vec![
                     Cell::from(row.key.clone()).style(key_style),
-                    Cell::from(val_text),
+                    Cell::from(val.clone()).style(val_style),
                 ])
-                .height(height)
+                .height(1)
             } else {
                 // Not in vault — single dim row
                 let key_style = if selected {
