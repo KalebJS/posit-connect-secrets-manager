@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Rect},
     style::Style,
     text::Span,
-    widgets::{Block, BorderType, Borders, Cell, Row, Table},
+    widgets::{Block, BorderType, Borders, Cell, Row, Table, TableState},
     Frame,
 };
 
@@ -77,5 +77,9 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         .style(style_normal())
         .column_spacing(1);
 
-    f.render_widget(table, area);
+    let mut state = TableState::default();
+    if !app.env_var_rows.is_empty() {
+        state.select(Some(app.env_var_selected));
+    }
+    f.render_stateful_widget(table, area, &mut state);
 }

@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Alignment, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem},
+    widgets::{Block, BorderType, Borders, List, ListItem, ListState},
     Frame,
 };
 
@@ -97,6 +97,28 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         .border_style(border_style)
         .style(Style::default().bg(COLOR_BG));
 
+    // Compute the flat list index of the selected project (accounts for expanded rows above it)
+    let mut flat_selected = 0usize;
+    for (idx, project) in app.projects.iter().enumerate() {
+        if idx == app.project_list_selected {
+            break;
+        }
+        flat_selected += 1; // the project row itself
+        if app.project_expanded.contains(&project.guid) {
+            let sub_rows =
+                if project.env_vars.is_empty() && matches!(project.load_state, LoadState::Idle) {
+                    1 // "(no env vars)" placeholder
+                } else {
+                    project.env_vars.len()
+                };
+            flat_selected += sub_rows;
+        }
+    }
+
     let list = List::new(items).block(block);
-    f.render_widget(list, area);
+    let mut state = ListState::default();
+    if !app.projects.is_empty() {
+        state.select(Some(flat_selected));
+    }
+    f.render_stateful_widget(list, area, &mut state);
 }
