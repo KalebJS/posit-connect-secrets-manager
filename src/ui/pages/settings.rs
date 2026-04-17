@@ -31,6 +31,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         Constraint::Length(3),
         Constraint::Length(3),
         Constraint::Length(3),
+        Constraint::Length(3),
         Constraint::Min(0),
     ])
     .split(inner);
@@ -88,6 +89,34 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         f.render_widget(para, chunks[i]);
     }
 
+    // Theme field (index 3) — cycle-type, not text-editable
+    let is_theme_selected = app.settings_selected == 3 && focused;
+    let (theme_label_style, theme_value_style, theme_border) = if is_theme_selected {
+        (
+            app.palette.style_accent(),
+            app.palette.style_normal(),
+            app.palette.style_accent(),
+        )
+    } else {
+        (
+            app.palette.style_dim(),
+            app.palette.style_normal(),
+            app.palette.style_border(),
+        )
+    };
+    let theme_block = Block::default()
+        .title(Span::styled(" Theme ", theme_label_style))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(theme_border)
+        .style(Style::default());
+    let theme_para = Paragraph::new(Line::from(Span::styled(
+        format!(" {} (Enter to cycle)", app.config.theme.label()),
+        theme_value_style,
+    )))
+    .block(theme_block);
+    f.render_widget(theme_para, chunks[3]);
+
     // Last refresh (read-only)
     let refresh_val = app.config.last_refresh.as_deref().unwrap_or("Never");
     let refresh_block = Block::default()
@@ -101,5 +130,5 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         app.palette.style_dim(),
     )))
     .block(refresh_block);
-    f.render_widget(refresh_para, chunks[3]);
+    f.render_widget(refresh_para, chunks[4]);
 }

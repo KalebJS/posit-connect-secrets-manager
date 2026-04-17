@@ -1341,7 +1341,7 @@ impl App {
     }
 
     fn handle_settings_key(&mut self, key: KeyEvent) {
-        const FIELD_COUNT: usize = 3; // server_url, api_key, vault_path
+        const FIELD_COUNT: usize = 4; // server_url, api_key, vault_path, theme
 
         if self.settings_editing {
             match key.code {
@@ -1371,14 +1371,21 @@ impl App {
                     }
                 }
                 KeyCode::Enter | KeyCode::Char('e') => {
-                    let current = match self.settings_selected {
-                        0 => self.config.server_url.clone(),
-                        1 => self.config.api_key.clone(),
-                        2 => self.config.vault_path.clone(),
-                        _ => String::new(),
-                    };
-                    self.settings_edit_buffer = current;
-                    self.settings_editing = true;
+                    if self.settings_selected == 3 {
+                        self.config.theme = self.config.theme.next();
+                        self.palette = Palette::new(self.config.theme.clone());
+                        let _ = self.config.save();
+                        self.set_status("Theme saved".into(), StatusLevel::Success);
+                    } else {
+                        let current = match self.settings_selected {
+                            0 => self.config.server_url.clone(),
+                            1 => self.config.api_key.clone(),
+                            2 => self.config.vault_path.clone(),
+                            _ => String::new(),
+                        };
+                        self.settings_edit_buffer = current;
+                        self.settings_editing = true;
+                    }
                 }
                 KeyCode::Left | KeyCode::Esc | KeyCode::Char('h') => {
                     self.sidebar_focused = true;
@@ -1471,7 +1478,7 @@ mod tests {
             last_refresh: None,
             included_projects: Vec::new(),
             excluded_vars: HashMap::new(),
-            theme: crate::ui::theme::ThemeVariant::Inherit,
+            theme: crate::ui::theme::ThemeVariant::OneDark,
         }
     }
 
@@ -2389,7 +2396,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn theme_defaults_to_inherit_when_absent() {
+    fn theme_defaults_to_onedark_when_absent() {
         let toml = r#"
 server_url = ""
 api_key = ""
@@ -2398,7 +2405,7 @@ vault_path = ""
         let config: Config = toml::from_str(toml).unwrap();
         assert!(matches!(
             config.theme,
-            crate::ui::theme::ThemeVariant::Inherit
+            crate::ui::theme::ThemeVariant::OneDark
         ));
     }
 
@@ -2418,17 +2425,17 @@ theme = "onedark"
     }
 
     #[test]
-    fn theme_sky_orange_parses_from_config() {
+    fn theme_onelight_parses_from_config() {
         let toml = r#"
 server_url = ""
 api_key = ""
 vault_path = ""
-theme = "sky-orange"
+theme = "onelight"
 "#;
         let config: Config = toml::from_str(toml).unwrap();
         assert!(matches!(
             config.theme,
-            crate::ui::theme::ThemeVariant::SkyOrange
+            crate::ui::theme::ThemeVariant::OneLight
         ));
     }
 
