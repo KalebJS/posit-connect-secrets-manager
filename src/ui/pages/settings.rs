@@ -1,5 +1,4 @@
 use crate::app::App;
-use crate::ui::theme::*;
 use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::Style,
@@ -11,18 +10,18 @@ use ratatui::{
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let focused = !app.sidebar_focused;
     let border_style = if focused {
-        style_accent()
+        app.palette.style_accent()
     } else {
-        style_border()
+        app.palette.style_border()
     };
 
     let outer_block = Block::default()
-        .title(Span::styled(" Settings ", style_header()))
+        .title(Span::styled(" Settings ", app.palette.style_header()))
         .title_alignment(Alignment::Left)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(border_style)
-        .style(Style::default().bg(COLOR_BG));
+        .style(app.palette.block_bg());
 
     let inner = outer_block.inner(area);
     f.render_widget(outer_block, area);
@@ -57,16 +56,20 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
         let (label_style, value_style, field_border) = if is_selected {
             (
-                style_accent(),
+                app.palette.style_accent(),
                 if is_editing {
-                    style_selected()
+                    app.palette.style_selected()
                 } else {
-                    style_normal()
+                    app.palette.style_normal()
                 },
-                style_accent(),
+                app.palette.style_accent(),
             )
         } else {
-            (style_dim(), style_normal(), style_border())
+            (
+                app.palette.style_dim(),
+                app.palette.style_normal(),
+                app.palette.style_border(),
+            )
         };
 
         let block = Block::default()
@@ -74,7 +77,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(field_border)
-            .style(Style::default().bg(COLOR_BG));
+            .style(Style::default());
 
         let para = Paragraph::new(Line::from(Span::styled(
             format!(" {}", display),
@@ -88,14 +91,14 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     // Last refresh (read-only)
     let refresh_val = app.config.last_refresh.as_deref().unwrap_or("Never");
     let refresh_block = Block::default()
-        .title(Span::styled(" Last Refresh ", style_dim()))
+        .title(Span::styled(" Last Refresh ", app.palette.style_dim()))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(style_dim())
-        .style(Style::default().bg(COLOR_BG));
+        .border_style(app.palette.style_dim())
+        .style(Style::default());
     let refresh_para = Paragraph::new(Line::from(Span::styled(
         format!(" {}", refresh_val),
-        style_dim(),
+        app.palette.style_dim(),
     )))
     .block(refresh_block);
     f.render_widget(refresh_para, chunks[3]);

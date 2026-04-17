@@ -1,5 +1,4 @@
 use crate::app::{App, VaultField};
-use crate::ui::theme::*;
 use ratatui::{
     layout::{Alignment, Constraint, Rect},
     style::Style,
@@ -11,14 +10,14 @@ use ratatui::{
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let focused = !app.sidebar_focused;
     let border_style = if focused {
-        style_accent()
+        app.palette.style_accent()
     } else {
-        style_border()
+        app.palette.style_border()
     };
 
     let header = Row::new(vec![
-        Cell::from("Key").style(style_header()),
-        Cell::from("Value").style(style_header()),
+        Cell::from("Key").style(app.palette.style_header()),
+        Cell::from("Value").style(app.palette.style_header()),
     ])
     .height(1)
     .bottom_margin(1);
@@ -70,19 +69,19 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let block = Block::default()
-        .title(Span::styled(title, style_header()))
+        .title(Span::styled(title, app.palette.style_header()))
         .title_alignment(Alignment::Left)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(border_style)
-        .style(Style::default().bg(COLOR_BG));
+        .style(app.palette.block_bg());
 
     let widths = [Constraint::Percentage(40), Constraint::Percentage(60)];
 
     let table = Table::new(rows, widths)
         .header(header)
         .block(block)
-        .style(style_normal())
+        .style(Style::default())
         .column_spacing(1);
 
     let mut state = TableState::default();
@@ -106,26 +105,28 @@ fn vault_row<'a>(
     if is_editing {
         match app.vault_edit_field {
             VaultField::Key => Row::new(vec![
-                Cell::from(format!("{}█", app.vault_edit_buffer)).style(style_selected()),
-                Cell::from(v.to_string()).style(style_normal()),
+                Cell::from(format!("{}█", app.vault_edit_buffer))
+                    .style(app.palette.style_selected()),
+                Cell::from(v.to_string()).style(app.palette.style_normal()),
             ])
             .height(1),
             VaultField::Value => Row::new(vec![
-                Cell::from(k.to_string()).style(style_normal()),
-                Cell::from(format!("{}█", app.vault_edit_buffer)).style(style_selected()),
+                Cell::from(k.to_string()).style(app.palette.style_normal()),
+                Cell::from(format!("{}█", app.vault_edit_buffer))
+                    .style(app.palette.style_selected()),
             ])
             .height(1),
         }
     } else {
         let key_style = if is_selected {
-            style_selected()
+            app.palette.style_selected()
         } else {
-            style_normal()
+            app.palette.style_normal()
         };
         let val_style = if is_selected {
-            style_selected()
+            app.palette.style_selected()
         } else {
-            style_normal()
+            app.palette.style_normal()
         };
         Row::new(vec![
             Cell::from(k.to_string()).style(key_style),

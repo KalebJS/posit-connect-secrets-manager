@@ -6,18 +6,13 @@ pub mod theme;
 use crate::app::{App, Page};
 use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
-    style::Style,
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame,
 };
-use theme::*;
 
 pub fn render(f: &mut Frame, app: &mut App) {
     let area = f.area();
-
-    // Fill background
-    f.render_widget(Block::default().style(Style::default().bg(COLOR_BG)), area);
 
     // Split: [body] / [status bar]
     let main_chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(area);
@@ -52,12 +47,17 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     // Render sync confirmation modal on top if active
     if let Some(names) = &app.sync_confirm.clone() {
-        render_sync_modal(f, area, names);
+        render_sync_modal(f, app, area, names);
     }
 
     // Render add-var popup on top if active
     if app.add_var_popup.is_some() {
         render_add_var_popup(f, app, area);
+    }
+
+    // Render env var detail popup on top if active
+    if app.env_var_detail.is_some() {
+        render_env_var_detail_popup(f, app, area);
     }
 }
 
@@ -89,18 +89,21 @@ fn render_add_var_popup(f: &mut Frame, app: &App, area: Rect) {
 
     let title = format!(" Add Env Var → {} ", project_name);
     let block = Block::default()
-        .title(Span::styled(title, style_header()))
+        .title(Span::styled(title, app.palette.style_header()))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(style_accent())
-        .style(Style::default().bg(COLOR_BG));
+        .border_style(app.palette.style_accent())
+        .style(app.palette.block_bg());
     let inner = block.inner(popup_area);
     f.render_widget(block, popup_area);
 
     let chunks = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(inner);
 
-    let input = Paragraph::new(Span::styled(format!(" > {}█", popup.query), style_normal()));
+    let input = Paragraph::new(Span::styled(
+        format!(" > {}█", popup.query),
+        app.palette.style_normal(),
+    ));
     f.render_widget(input, chunks[0]);
 
     let items: Vec<ListItem> = suggestions
@@ -108,9 +111,9 @@ fn render_add_var_popup(f: &mut Frame, app: &App, area: Rect) {
         .enumerate()
         .map(|(i, key)| {
             let style = if i == popup.selected {
-                style_selected()
+                app.palette.style_selected()
             } else {
-                style_normal()
+                app.palette.style_normal()
             };
             ListItem::new(Line::from(Span::styled(format!("  {}", key), style)))
         })
@@ -127,15 +130,15 @@ fn render_filter_bar(f: &mut Frame, app: &App, area: Rect) {
     let cursor = if app.filter_editing { "█" } else { "" };
     let label = format!(" / {}{}", app.filter_query, cursor);
     let style = if app.filter_editing {
-        style_accent()
+        app.palette.style_accent()
     } else {
-        style_dim()
+        app.palette.style_dim()
     };
     let para = Paragraph::new(Span::styled(label, style));
     f.render_widget(para, area);
 }
 
-fn render_sync_modal(f: &mut Frame, area: Rect, names: &[String]) {
+fn render_sync_modal(f: &mut Frame, app: &App, area: Rect, names: &[String]) {
     const POPUP_W: u16 = 52;
     // Header + blank + count line + blank + up to 10 project lines + blank + footer + blank
     let visible = names.len().min(10) as u16;
@@ -153,36 +156,118 @@ fn render_sync_modal(f: &mut Frame, area: Rect, names: &[String]) {
     f.render_widget(Clear, popup_area);
 
     let block = Block::default()
-        .title(Span::styled(" Confirm Sync ", style_header()))
+        .title(Span::styled(" Confirm Sync ", app.palette.style_header()))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(style_accent())
-        .style(Style::default().bg(COLOR_BG));
+        .border_style(app.palette.style_accent())
+        .style(app.palette.block_bg());
 
     let mut lines: Vec<Line> = Vec::new();
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         format!("  Syncing vault values to {} project(s):", names.len()),
-        style_normal(),
+        app.palette.style_normal(),
     )));
     lines.push(Line::from(""));
     for name in names.iter().take(10) {
         lines.push(Line::from(Span::styled(
             format!("    • {}", name),
-            style_normal(),
+            app.palette.style_normal(),
         )));
     }
     if names.len() > 10 {
         lines.push(Line::from(Span::styled(
             format!("    … and {} more", names.len() - 10),
-            style_dim(),
+            app.palette.style_dim(),
         )));
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         "  Enter/y: Confirm    Esc/n: Cancel",
-        style_dim(),
+        app.palette.style_dim(),
+    )));
+
+    let para = Paragraph::new(lines).block(block);
+    f.render_widget(para, popup_area);
+}
+
+fn render_env_var_detail_popup(f: &mut Frame, app: &App, area: Rect) {
+    let Some(key) = &app.env_var_detail else {
+        return;
+    };
+
+    // Find all projects that have this env var
+    let matches: Vec<(String, bool)> = app
+        .projects
+        .iter()
+        .filter(|p| p.env_vars.iter().any(|v| &v.name == key))
+        .map(|p| {
+            let name = p.title.as_deref().unwrap_or(&p.name).to_string();
+            let included = app.config.included_projects.contains(&p.guid);
+            (name, included)
+        })
+        .collect();
+
+    const POPUP_W: u16 = 58;
+    let body_lines = matches.len().max(1) as u16;
+    let popup_h = (4 + body_lines).min(16);
+
+    let x = area.x + area.width.saturating_sub(POPUP_W) / 2;
+    let y = area.y + area.height.saturating_sub(popup_h) / 2;
+    let popup_area = Rect {
+        x,
+        y,
+        width: POPUP_W.min(area.width),
+        height: popup_h.min(area.height),
+    };
+
+    f.render_widget(Clear, popup_area);
+
+    let title = format!(" Projects using: {} ", key);
+    let block = Block::default()
+        .title(Span::styled(title, app.palette.style_header()))
+        .title_alignment(Alignment::Center)
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(app.palette.style_accent())
+        .style(app.palette.block_bg());
+
+    let max_body = (popup_h as usize).saturating_sub(3);
+    let mut lines: Vec<Line> = Vec::new();
+
+    if matches.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (no projects have this var)",
+            app.palette.style_dim(),
+        )));
+    } else {
+        for (name, included) in matches.iter().take(max_body.saturating_sub(1)) {
+            let marker = if *included { "[✓]" } else { "[ ]" };
+            let style = if *included {
+                app.palette.style_normal()
+            } else {
+                app.palette.style_dim()
+            };
+            lines.push(Line::from(Span::styled(
+                format!("  {} {}", marker, name),
+                style,
+            )));
+        }
+        if matches.len() > max_body.saturating_sub(1) {
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "  … and {} more",
+                    matches.len() - max_body.saturating_sub(1)
+                ),
+                app.palette.style_dim(),
+            )));
+        }
+    }
+
+    lines.push(Line::from(Span::styled(
+        "  any key to close",
+        app.palette.style_dim(),
     )));
 
     let para = Paragraph::new(lines).block(block);

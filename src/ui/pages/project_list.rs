@@ -1,8 +1,6 @@
 use crate::app::{App, LoadState};
-use crate::ui::theme::*;
 use ratatui::{
     layout::{Alignment, Rect},
-    style::Style,
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, ListState},
     Frame,
@@ -11,9 +9,9 @@ use ratatui::{
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let focused = !app.sidebar_focused;
     let border_style = if focused {
-        style_accent()
+        app.palette.style_accent()
     } else {
-        style_border()
+        app.palette.style_border()
     };
 
     let mut items: Vec<ListItem> = Vec::new();
@@ -23,7 +21,10 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             LoadState::Error(e) => format!("  ✗ Error: {}", e),
             LoadState::Idle => "  No projects loaded. Press Ctrl+P to refresh.".to_string(),
         };
-        items.push(ListItem::new(Line::from(Span::styled(msg, style_dim()))));
+        items.push(ListItem::new(Line::from(Span::styled(
+            msg,
+            app.palette.style_dim(),
+        ))));
     }
 
     let filtering = !app.filter_query.is_empty();
@@ -65,11 +66,11 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         // Cursor is on this project row (not on a var sub-row)
         let cursor_on_project = is_selected && app.project_var_selected.is_none();
         let style = if cursor_on_project && focused {
-            style_selected()
+            app.palette.style_selected()
         } else if is_whitelisted {
-            style_normal()
+            app.palette.style_normal()
         } else {
-            style_dim()
+            app.palette.style_dim()
         };
         items.push(ListItem::new(Line::from(Span::styled(label, style))));
 
@@ -80,12 +81,15 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                 app.config.server_url.trim_end_matches('/'),
                 project.guid
             );
-            items.push(ListItem::new(Line::from(Span::styled(url, style_dim()))));
+            items.push(ListItem::new(Line::from(Span::styled(
+                url,
+                app.palette.style_dim(),
+            ))));
 
             if project.env_vars.is_empty() && matches!(project.load_state, LoadState::Idle) {
                 items.push(ListItem::new(Line::from(Span::styled(
                     "      (no env vars)",
-                    style_dim(),
+                    app.palette.style_dim(),
                 ))));
             }
             let excl_vars = app.config.excluded_vars.get(&project.guid);
@@ -108,9 +112,17 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                     } else {
                         "  [NOT IN VAULT]".to_string()
                     };
-                    (if in_vault { "●" } else { "○" }, val_hint, style_dim())
+                    (
+                        if in_vault { "●" } else { "○" },
+                        val_hint,
+                        app.palette.style_dim(),
+                    )
                 } else if is_var_excluded {
-                    ("[x]", "  [EXCLUDED FROM SYNC]".to_string(), style_dim())
+                    (
+                        "[x]",
+                        "  [EXCLUDED FROM SYNC]".to_string(),
+                        app.palette.style_dim(),
+                    )
                 } else if in_vault {
                     let val = app.vault.get(&var.name).unwrap_or("");
                     let truncated = if val.len() > 28 {
@@ -121,15 +133,15 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                     (
                         "●",
                         format!(" = {}", truncated),
-                        Style::default().fg(COLOR_SUCCESS).bg(COLOR_BG),
+                        app.palette.style_success(),
                     )
                 } else {
-                    ("○", "  [NOT IN VAULT]".to_string(), style_dim())
+                    ("○", "  [NOT IN VAULT]".to_string(), app.palette.style_dim())
                 };
 
                 let line = format!("      {} {}{}", dot, var.name, suffix);
                 let style = if cursor_on_var {
-                    style_selected()
+                    app.palette.style_selected()
                 } else {
                     base_style
                 };
@@ -141,12 +153,12 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let title = format!(" Projects ({}) ", app.projects.len());
 
     let block = Block::default()
-        .title(Span::styled(title, style_header()))
+        .title(Span::styled(title, app.palette.style_header()))
         .title_alignment(Alignment::Left)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(border_style)
-        .style(Style::default().bg(COLOR_BG));
+        .style(app.palette.block_bg());
 
     // Compute the flat list index of the highlighted row (project or var)
     let mut flat_selected = 0usize;

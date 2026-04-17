@@ -7,6 +7,7 @@ use crate::api::client::ConnectClient;
 use crate::api::types::{ContentItem, EnvVar};
 use crate::config::Config;
 use crate::error::AppError;
+use crate::ui::theme::Palette;
 use crate::vault::Vault;
 
 // ---------------------------------------------------------------------------
@@ -165,8 +166,13 @@ pub struct App {
     // Consumed and cleared by the main event loop before the next draw.
     pub open_editor_for: Option<EditorTarget>,
 
+    // Theme / palette (built from config at startup)
+    pub palette: Palette,
+
     // Env var list
     pub env_var_selected: usize,
+    /// Key shown in "projects using this var" popup; None = hidden
+    pub env_var_detail: Option<String>,
 
     // Vault
     pub vault_selected: usize,
@@ -206,6 +212,8 @@ impl App {
             Vault::load_empty()
         };
 
+        let palette = Palette::new(config.theme.clone());
+
         Ok(Self {
             page: Page::ProjectList,
             projects: Vec::new(),
@@ -220,7 +228,9 @@ impl App {
             sync_confirm: None,
             add_var_popup: None,
             open_editor_for: None,
+            palette,
             env_var_selected: 0,
+            env_var_detail: None,
             vault_selected: 0,
             vault_editing: None,
             vault_edit_buffer: String::new(),
@@ -1109,6 +1119,11 @@ impl App {
     }
 
     fn handle_env_var_list_key(&mut self, key: KeyEvent) {
+        // Any key closes the detail popup when it's open
+        if self.env_var_detail.is_some() {
+            self.env_var_detail = None;
+            return;
+        }
         let count = self.env_var_rows.len();
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
@@ -1119,6 +1134,11 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') => {
                 if self.env_var_selected + 1 < count {
                     self.env_var_selected += 1;
+                }
+            }
+            KeyCode::Char(' ') | KeyCode::Enter => {
+                if let Some(row) = self.env_var_rows.get(self.env_var_selected) {
+                    self.env_var_detail = Some(row.key.clone());
                 }
             }
             KeyCode::Char('e') | KeyCode::Char('E') => {
@@ -1423,11 +1443,13 @@ mod tests {
             last_refresh: None,
             included_projects: Vec::new(),
             excluded_vars: HashMap::new(),
+            theme: crate::ui::theme::ThemeVariant::Inherit,
         }
     }
 
     fn make_app(config: Config, vault: Vault, projects: Vec<ProjectEntry>) -> App {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
+        let palette = crate::ui::theme::Palette::new(config.theme.clone());
         App {
             page: Page::ProjectList,
             projects,
@@ -1442,7 +1464,9 @@ mod tests {
             sync_confirm: None,
             add_var_popup: None,
             open_editor_for: None,
+            palette,
             env_var_selected: 0,
+            env_var_detail: None,
             vault_selected: 0,
             vault_editing: None,
             vault_edit_buffer: String::new(),
@@ -2330,5 +2354,150 @@ mod tests {
         press(&mut app, KeyCode::Char('f'));
         assert!(app.filter_editing);
         assert_eq!(app.filter_query, "db"); // query preserved
+    }
+
+    // -----------------------------------------------------------------------
+    // Theme config
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn theme_defaults_to_inherit_when_absent() {
+        let toml = r#"
+server_url = ""
+api_key = ""
+vault_path = ""
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(matches!(
+            config.theme,
+            crate::ui::theme::ThemeVariant::Inherit
+        ));
+    }
+
+    #[test]
+    fn theme_onedark_parses_from_config() {
+        let toml = r#"
+server_url = ""
+api_key = ""
+vault_path = ""
+theme = "onedark"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(matches!(
+            config.theme,
+            crate::ui::theme::ThemeVariant::OneDark
+        ));
+    }
+
+    #[test]
+    fn theme_sky_orange_parses_from_config() {
+        let toml = r#"
+server_url = ""
+api_key = ""
+vault_path = ""
+theme = "sky-orange"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(matches!(
+            config.theme,
+            crate::ui::theme::ThemeVariant::SkyOrange
+        ));
+    }
+
+    #[test]
+    fn theme_roundtrips_through_toml() {
+        let mut config = base_config();
+        config.theme = crate::ui::theme::ThemeVariant::OneDark;
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        let restored: Config = toml::from_str(&serialized).unwrap();
+        assert!(matches!(
+            restored.theme,
+            crate::ui::theme::ThemeVariant::OneDark
+        ));
+    }
+
+    // -----------------------------------------------------------------------
+    // env_var_detail popup
+    // -----------------------------------------------------------------------
+
+    fn env_var_list_app() -> App {
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        let projects = vec![
+            project("guid-a", "proj-a", vec![env_var("FOO"), env_var("BAR")]),
+            project("guid-b", "proj-b", vec![env_var("FOO")]),
+        ];
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("FOO".into(), "secret".into());
+        let mut app = make_app(config, vault, projects);
+        app.page = Page::EnvVarList;
+        app.sidebar_focused = false;
+        app.rebuild_env_var_rows();
+        app
+    }
+
+    #[test]
+    fn space_opens_env_var_detail_popup() {
+        let mut app = env_var_list_app();
+        assert!(app.env_var_detail.is_none());
+        press(&mut app, KeyCode::Char(' '));
+        assert!(app.env_var_detail.is_some());
+    }
+
+    #[test]
+    fn enter_opens_env_var_detail_popup() {
+        let mut app = env_var_list_app();
+        press(&mut app, KeyCode::Enter);
+        assert!(app.env_var_detail.is_some());
+    }
+
+    #[test]
+    fn popup_key_contains_selected_row_key() {
+        let mut app = env_var_list_app();
+        let expected_key = app.env_var_rows[app.env_var_selected].key.clone();
+        press(&mut app, KeyCode::Char(' '));
+        assert_eq!(app.env_var_detail.as_deref(), Some(expected_key.as_str()));
+    }
+
+    #[test]
+    fn any_key_closes_env_var_detail_popup() {
+        let mut app = env_var_list_app();
+        press(&mut app, KeyCode::Char(' ')); // open
+        assert!(app.env_var_detail.is_some());
+        press(&mut app, KeyCode::Char('x')); // any key
+        assert!(app.env_var_detail.is_none());
+    }
+
+    #[test]
+    fn esc_closes_env_var_detail_popup_not_sidebar() {
+        let mut app = env_var_list_app();
+        press(&mut app, KeyCode::Char(' ')); // open
+        press(&mut app, KeyCode::Esc); // close popup, NOT go to sidebar
+        assert!(app.env_var_detail.is_none());
+        // sidebar focus should NOT have changed — popup intercepted the key
+        assert!(!app.sidebar_focused);
+    }
+
+    #[test]
+    fn nav_still_works_when_popup_closed() {
+        let mut app = env_var_list_app();
+        let initial = app.env_var_selected;
+        // Open and immediately close popup
+        press(&mut app, KeyCode::Char(' '));
+        press(&mut app, KeyCode::Char('x'));
+        // Nav should still work
+        press(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.env_var_selected, initial + 1);
+    }
+
+    #[test]
+    fn nav_blocked_while_popup_open() {
+        let mut app = env_var_list_app();
+        let initial = app.env_var_selected;
+        press(&mut app, KeyCode::Char(' ')); // open popup
+        press(&mut app, KeyCode::Char('j')); // this closes popup, not navigates
+                                             // selection must be unchanged — j closed the popup
+        assert_eq!(app.env_var_selected, initial);
+        assert!(app.env_var_detail.is_none());
     }
 }

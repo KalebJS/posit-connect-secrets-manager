@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::ui::theme::ThemeVariant;
 use dirs::config_dir;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -17,6 +18,9 @@ pub struct Config {
     /// Blacklist: per-GUID list of env var names to skip during sync.
     #[serde(default)]
     pub excluded_vars: HashMap<String, Vec<String>>,
+    /// Color theme: "inherit" (default), "onedark", or "sky-orange"
+    #[serde(default)]
+    pub theme: ThemeVariant,
 }
 
 impl Config {

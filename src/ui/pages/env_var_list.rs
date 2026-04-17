@@ -1,5 +1,4 @@
 use crate::app::App;
-use crate::ui::theme::*;
 use ratatui::{
     layout::{Alignment, Constraint, Rect},
     style::Style,
@@ -11,14 +10,14 @@ use ratatui::{
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let focused = !app.sidebar_focused;
     let border_style = if focused {
-        style_accent()
+        app.palette.style_accent()
     } else {
-        style_border()
+        app.palette.style_border()
     };
 
     let header = Row::new(vec![
-        Cell::from("Env Var Key").style(style_header()),
-        Cell::from("Vault Value").style(style_header()),
+        Cell::from("Env Var Key").style(app.palette.style_header()),
+        Cell::from("Vault Value").style(app.palette.style_header()),
     ])
     .height(1)
     .bottom_margin(1);
@@ -42,14 +41,14 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             } && focused;
             if let Some(val) = &row.vault_value {
                 let key_style = if selected {
-                    style_selected()
+                    app.palette.style_selected()
                 } else {
-                    style_normal()
+                    app.palette.style_normal()
                 };
                 let val_style = if selected {
-                    style_selected()
+                    app.palette.style_selected()
                 } else {
-                    style_normal()
+                    app.palette.style_normal()
                 };
 
                 Row::new(vec![
@@ -60,14 +59,14 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             } else {
                 // Not in vault — single dim row
                 let key_style = if selected {
-                    style_selected()
+                    app.palette.style_selected()
                 } else {
-                    style_normal()
+                    app.palette.style_normal()
                 };
                 let val_style = if selected {
-                    style_selected()
+                    app.palette.style_selected()
                 } else {
-                    style_dim()
+                    app.palette.style_dim()
                 };
                 Row::new(vec![
                     Cell::from(row.key.clone()).style(key_style),
@@ -89,19 +88,19 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let block = Block::default()
-        .title(Span::styled(title, style_header()))
+        .title(Span::styled(title, app.palette.style_header()))
         .title_alignment(Alignment::Left)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(border_style)
-        .style(Style::default().bg(COLOR_BG));
+        .style(app.palette.block_bg());
 
     let widths = [Constraint::Percentage(40), Constraint::Percentage(60)];
 
     let table = Table::new(rows, widths)
         .header(header)
         .block(block)
-        .style(style_normal())
+        .style(Style::default())
         .column_spacing(1);
 
     let mut state = TableState::default();

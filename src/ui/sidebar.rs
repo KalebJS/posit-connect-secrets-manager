@@ -1,4 +1,3 @@
-use super::theme::*;
 use crate::app::{App, Page};
 use ratatui::{
     layout::{Alignment, Rect},
@@ -10,9 +9,9 @@ use ratatui::{
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let focused = app.sidebar_focused;
     let border_style = if focused {
-        style_accent()
+        app.palette.style_accent()
     } else {
-        style_border()
+        app.palette.style_border()
     };
 
     let pages = [
@@ -35,21 +34,21 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             };
             let label = format!(" {} {}", arrow, page.label());
             let style = if is_current {
-                style_selected()
+                app.palette.style_selected()
             } else {
-                style_normal()
+                app.palette.style_normal()
             };
             ListItem::new(Line::from(Span::styled(label, style)))
         })
         .collect();
 
     let block = Block::default()
-        .title(Span::styled(" POSIT SECRETS ", style_header()))
+        .title(Span::styled(" POSIT SECRETS ", app.palette.style_header()))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(border_style)
-        .style(ratatui::style::Style::default().bg(COLOR_BG));
+        .style(app.palette.block_bg());
 
     let list = List::new(items).block(block);
     f.render_widget(list, area);
