@@ -1114,7 +1114,7 @@ impl App {
             KeyCode::Char('a') => {
                 self.trigger_add_var();
             }
-            KeyCode::Left | KeyCode::Esc => {
+            KeyCode::Left | KeyCode::Esc | KeyCode::Char('h') => {
                 self.sidebar_focused = true;
             }
             _ => {}
