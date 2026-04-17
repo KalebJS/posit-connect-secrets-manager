@@ -1,5 +1,7 @@
 use chrono::Utc;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 use std::collections::HashSet;
 use tokio::sync::mpsc;
 
@@ -207,6 +209,9 @@ pub struct App {
     pub filter_editing: bool,
     pub filter_selected: usize,
 
+    // Fuzzy matcher (reused across filter calls)
+    pub matcher: SkimMatcherV2,
+
     // Async
     pub tx: mpsc::Sender<AppEvent>,
     pub rx: mpsc::Receiver<AppEvent>,
@@ -258,6 +263,7 @@ impl App {
             filter_query: String::new(),
             filter_editing: false,
             filter_selected: 0,
+            matcher: SkimMatcherV2::default(),
             tx,
             rx,
             status_message: None,
@@ -699,12 +705,7 @@ impl App {
         if self.filter_query.is_empty() {
             return true;
         }
-        match regex::Regex::new(&format!("(?i){}", self.filter_query)) {
-            Ok(re) => re.is_match(text),
-            Err(_) => text
-                .to_lowercase()
-                .contains(&self.filter_query.to_lowercase()),
-        }
+        self.matcher.fuzzy_match(text, &self.filter_query).is_some()
     }
 
     pub fn filtered_count(&self) -> usize {
@@ -751,7 +752,7 @@ impl App {
         let Some(popup) = &self.add_var_popup else {
             return Vec::new();
         };
-        let q = popup.query.to_lowercase();
+        let q = &popup.query;
         let existing: std::collections::HashSet<&str> = self
             .projects
             .iter()
@@ -762,7 +763,7 @@ impl App {
             .entries
             .keys()
             .filter(|k| !existing.contains(k.as_str()))
-            .filter(|k| q.is_empty() || k.to_lowercase().contains(&q))
+            .filter(|k| q.is_empty() || self.matcher.fuzzy_match(k, q).is_some())
             .cloned()
             .collect()
     }
@@ -950,6 +951,12 @@ impl App {
             return;
         }
 
+        // q quits (not while editing)
+        if key.code == KeyCode::Char('q') && !editing {
+            self.should_quit = true;
+            return;
+        }
+
         if self.sidebar_focused {
             self.handle_sidebar_key(key);
         } else {
@@ -979,6 +986,18 @@ impl App {
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
                 self.sidebar_focused = false;
             }
+            KeyCode::Char('g') => {
+                self.page = Page::from_index(0);
+                self.filter_query.clear();
+                self.filter_editing = false;
+                self.filter_selected = 0;
+            }
+            KeyCode::Char('G') => {
+                self.page = Page::from_index(3);
+                self.filter_query.clear();
+                self.filter_editing = false;
+                self.filter_selected = 0;
+            }
             _ => {}
         }
     }
@@ -994,7 +1013,7 @@ impl App {
         let in_edit_mode = self.vault_editing.is_some() || self.settings_editing;
         if !in_edit_mode {
             match key.code {
-                KeyCode::Char('f') => {
+                KeyCode::Char('f') | KeyCode::Char('/') => {
                     self.filter_editing = true;
                     return;
                 }
@@ -1131,6 +1150,18 @@ impl App {
             KeyCode::Char('a') => {
                 self.trigger_add_var();
             }
+            KeyCode::Char('g') => {
+                if count > 0 {
+                    self.project_list_selected = 0;
+                    self.project_var_selected = None;
+                }
+            }
+            KeyCode::Char('G') => {
+                if count > 0 {
+                    self.project_list_selected = count - 1;
+                    self.project_var_selected = None;
+                }
+            }
             KeyCode::Left | KeyCode::Esc | KeyCode::Char('h') => {
                 self.sidebar_focused = true;
             }
@@ -1164,6 +1195,14 @@ impl App {
             KeyCode::Char('e') | KeyCode::Char('E') => {
                 if let Some(row) = self.env_var_rows.get(self.env_var_selected) {
                     self.open_editor_for = Some(EditorTarget::VaultEntry(row.key.clone()));
+                }
+            }
+            KeyCode::Char('g') => {
+                self.env_var_selected = 0;
+            }
+            KeyCode::Char('G') => {
+                if count > 0 {
+                    self.env_var_selected = count - 1;
                 }
             }
             KeyCode::Left | KeyCode::Esc | KeyCode::Char('h') => {
@@ -1290,6 +1329,16 @@ impl App {
                         self.rebuild_env_var_rows();
                     }
                 }
+                KeyCode::Char('g') => {
+                    if entries_len > 0 {
+                        self.vault_selected = 0;
+                    }
+                }
+                KeyCode::Char('G') => {
+                    if entries_len > 0 {
+                        self.vault_selected = entries_len - 1;
+                    }
+                }
                 KeyCode::Left | KeyCode::Esc | KeyCode::Char('h') => {
                     self.sidebar_focused = true;
                 }
@@ -1403,6 +1452,12 @@ impl App {
                         self.settings_edit_buffer = current;
                         self.settings_editing = true;
                     }
+                }
+                KeyCode::Char('g') => {
+                    self.settings_selected = 0;
+                }
+                KeyCode::Char('G') => {
+                    self.settings_selected = FIELD_COUNT - 1;
                 }
                 KeyCode::Left | KeyCode::Esc | KeyCode::Char('h') => {
                     self.sidebar_focused = true;
@@ -1529,6 +1584,7 @@ mod tests {
             filter_query: String::new(),
             filter_editing: false,
             filter_selected: 0,
+            matcher: SkimMatcherV2::default(),
             tx,
             rx,
             status_message: None,
@@ -2214,20 +2270,20 @@ mod tests {
     }
 
     #[test]
-    fn filter_matches_regex_pattern() {
+    fn filter_matches_fuzzy_non_contiguous() {
         let mut app = make_app(base_config(), Vault::load_empty(), vec![]);
-        app.filter_query = "^DB_".into();
+        app.filter_query = "dbh".into();
         assert!(app.filter_matches("DB_HOST"));
-        assert!(app.filter_matches("DB_PASS"));
-        assert!(!app.filter_matches("MY_DB_PASS"));
+        assert!(!app.filter_matches("DB_PASS"));
     }
 
     #[test]
-    fn filter_matches_invalid_regex_falls_back_to_substring() {
+    fn filter_matches_fuzzy_uppercase_query_is_case_sensitive() {
+        // Smart-case: uppercase query → case-sensitive, so DBH does not match db_host
         let mut app = make_app(base_config(), Vault::load_empty(), vec![]);
-        app.filter_query = "[unclosed".into(); // invalid regex
-        assert!(app.filter_matches("[unclosed bracket"));
-        assert!(!app.filter_matches("something else"));
+        app.filter_query = "DBH".into();
+        assert!(!app.filter_matches("db_host"));
+        assert!(app.filter_matches("DB_HOST"));
     }
 
     // -----------------------------------------------------------------------
@@ -2357,13 +2413,13 @@ mod tests {
     #[test]
     fn jk_navigate_filtered_list_when_filter_active() {
         let projects = vec![
-            project("a", "alpha", vec![]),
-            project("b", "bravo", vec![]),
-            project("c", "gamma", vec![]),
+            project("a", "aab-service", vec![]),
+            project("b", "aac-service", vec![]),
+            project("c", "xyz-backend", vec![]),
         ];
         let mut app = make_app(base_config(), Vault::load_empty(), projects);
-        // "lph" matches only "alpha" → 1 result; use "^[ab]" to match alpha+bravo → 2 results
-        app.filter_query = "^[ab]".into(); // matches "alpha" and "bravo" (2 of 3)
+        // "aas" fuzzy-matches "aab-service" and "aac-service" but not "xyz-backend" → 2 results
+        app.filter_query = "aas".into();
         assert_eq!(app.filtered_count(), 2);
         assert_eq!(app.filter_selected, 0);
 

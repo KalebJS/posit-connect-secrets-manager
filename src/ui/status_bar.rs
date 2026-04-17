@@ -21,15 +21,15 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             _ => "  ".to_string(),
         };
         let hints = if app.sidebar_focused {
-            "Tab:Content  ↑↓:Nav  Ctrl+P:Refresh  Ctrl+C:Quit"
+            "Tab:Content  j/k:Nav  g/G:Top/Bot  q:Quit"
         } else {
             match app.page {
-                Page::ProjectList => "Tab:Sidebar  ↑↓:Nav  Enter/Space:Expand  x:Toggle  a:AddVar  d:Del  ←/Esc:Sidebar  Ctrl+P:Refresh  Ctrl+C:Quit",
-                Page::EnvVarList  => "Tab:Sidebar  ↑↓:Nav  Space:Projects  e/E:Editor  ←/Esc:Sidebar  Ctrl+C:Quit",
+                Page::ProjectList => "j/k:Nav  Enter:Expand  x:Toggle  a:Add  d:Del  g/G:Top/Bot  f/:Filter  h:Back  Ctrl+P:Refresh  q:Quit",
+                Page::EnvVarList  => "j/k:Nav  Enter:Detail  e:Editor  g/G:Top/Bot  f/:Filter  h:Back  q:Quit",
                 Page::Vault if app.vault_editing.is_some() => "Enter:Save  Esc:Cancel",
-                Page::Vault       => "Tab:Sidebar  ↑↓:Nav  e/Enter:Edit  E:Editor  n:New  d:Del  ←/Esc:Sidebar  Ctrl+U:Sync  Ctrl+C:Quit",
+                Page::Vault       => "j/k:Nav  e/Enter:Edit  E:ExtEditor  n:New  d:Del  g/G:Top/Bot  f/:Filter  Ctrl+U:Sync  q:Quit",
                 Page::Settings if app.settings_editing => "Enter:Confirm  Esc:Cancel",
-                Page::Settings    => "Tab:Sidebar  ↑↓:Nav  Enter/e:Edit  ←/Esc:Sidebar  Ctrl+C:Quit",
+                Page::Settings    => "j/k:Nav  Enter/e:Edit  g/G:Top/Bot  h:Back  q:Quit",
             }
         };
         Line::from(vec![
