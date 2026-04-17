@@ -16,7 +16,7 @@ mod error;
 mod ui;
 mod vault;
 
-use app::App;
+use app::{App, EditorTarget};
 
 /// RAII guard — restores the terminal even on panic
 struct TerminalGuard;
@@ -61,6 +61,42 @@ async fn main() -> Result<()> {
             _ = tick.tick() => {
                 app.on_tick();
             }
+        }
+
+        // Open external editor if a key handler requested it
+        if let Some(target) = app.open_editor_for.take() {
+            let EditorTarget::VaultEntry(key) = target;
+            let current = app.vault.get(&key).unwrap_or("").to_string();
+
+            // Restore terminal so the editor can use the full screen
+            let _ = disable_raw_mode();
+            let _ = execute!(io::stdout(), LeaveAlternateScreen);
+
+            let tmp_path =
+                std::env::temp_dir().join(format!("posit-secrets-{}.tmp", std::process::id()));
+            if std::fs::write(&tmp_path, &current).is_ok() {
+                let editor = std::env::var("EDITOR")
+                    .or_else(|_| std::env::var("VISUAL"))
+                    .unwrap_or_else(|_| "vi".to_string());
+                let _ = std::process::Command::new(&editor).arg(&tmp_path).status();
+                if let Ok(new_value) = std::fs::read_to_string(&tmp_path) {
+                    // Strip a single trailing newline that editors typically append
+                    let new_value = new_value
+                        .strip_suffix('\n')
+                        .unwrap_or(&new_value)
+                        .to_string();
+                    app.vault.entries.insert(key, new_value);
+                    app.vault.dirty = true;
+                    let _ = app.vault.save();
+                    app.rebuild_env_var_rows();
+                }
+                let _ = std::fs::remove_file(&tmp_path);
+            }
+
+            // Re-initialize the terminal
+            let _ = enable_raw_mode();
+            let _ = execute!(io::stdout(), EnterAlternateScreen);
+            terminal.clear()?;
         }
 
         if app.should_quit {

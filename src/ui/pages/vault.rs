@@ -3,10 +3,22 @@ use crate::ui::theme::*;
 use ratatui::{
     layout::{Alignment, Constraint, Rect},
     style::Style,
-    text::Span,
+    text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Cell, Row, Table, TableState},
     Frame,
 };
+
+/// Splits `s` into chunks of at most `width` characters for display.
+fn wrap_at(s: &str, width: usize) -> Vec<String> {
+    if width < 4 || s.is_empty() {
+        return vec![s.to_string()];
+    }
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= width {
+        return vec![s.to_string()];
+    }
+    chars.chunks(width).map(|c| c.iter().collect()).collect()
+}
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let focused = !app.sidebar_focused;
@@ -23,6 +35,10 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     .height(1)
     .bottom_margin(1);
 
+    // Compute approximate value-column width for wrapping.
+    // Layout: 2 border chars + 1 column-spacing = 3 overhead; value col is ~60% of the rest.
+    let val_col_width = (area.width.saturating_sub(3) as usize * 60 / 100).max(10);
+
     let editing_idx = app.vault_editing;
 
     let rows: Vec<Row> = app
@@ -35,26 +51,44 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             let is_editing = editing_idx == Some(i);
 
             if is_editing {
+                // Editing row: single-line, show inline cursor
                 match app.vault_edit_field {
                     VaultField::Key => Row::new(vec![
                         Cell::from(format!("{}█", app.vault_edit_buffer)).style(style_selected()),
                         Cell::from(v.clone()).style(style_normal()),
-                    ]),
+                    ])
+                    .height(1),
                     VaultField::Value => Row::new(vec![
                         Cell::from(k.clone()).style(style_normal()),
                         Cell::from(format!("{}█", app.vault_edit_buffer)).style(style_selected()),
-                    ]),
+                    ])
+                    .height(1),
                 }
-            } else if is_selected {
-                Row::new(vec![
-                    Cell::from(k.clone()).style(style_selected()),
-                    Cell::from(v.clone()).style(style_selected()),
-                ])
             } else {
+                let key_style = if is_selected {
+                    style_selected()
+                } else {
+                    style_normal()
+                };
+                let val_style = if is_selected {
+                    style_selected()
+                } else {
+                    style_normal()
+                };
+
+                let wrapped = wrap_at(v, val_col_width);
+                let height = wrapped.len() as u16;
+                let val_text = Text::from(
+                    wrapped
+                        .iter()
+                        .map(|l| Line::from(Span::styled(l.clone(), val_style)))
+                        .collect::<Vec<_>>(),
+                );
                 Row::new(vec![
-                    Cell::from(k.clone()).style(style_normal()),
-                    Cell::from(v.clone()).style(style_normal()),
+                    Cell::from(k.clone()).style(key_style),
+                    Cell::from(val_text),
                 ])
+                .height(height)
             }
         })
         .collect();

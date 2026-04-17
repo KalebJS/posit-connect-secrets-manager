@@ -3,10 +3,22 @@ use crate::ui::theme::*;
 use ratatui::{
     layout::{Alignment, Constraint, Rect},
     style::Style,
-    text::Span,
+    text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Cell, Row, Table, TableState},
     Frame,
 };
+
+/// Splits `s` into chunks of at most `width` characters for display.
+fn wrap_at(s: &str, width: usize) -> Vec<String> {
+    if width < 4 || s.is_empty() {
+        return vec![s.to_string()];
+    }
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= width {
+        return vec![s.to_string()];
+    }
+    chars.chunks(width).map(|c| c.iter().collect()).collect()
+}
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let focused = !app.sidebar_focused;
@@ -23,32 +35,57 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     .height(1)
     .bottom_margin(1);
 
+    // Value column is ~60% of the inner area width.
+    let val_col_width = (area.width.saturating_sub(3) as usize * 60 / 100).max(10);
+
     let rows: Vec<Row> = app
         .env_var_rows
         .iter()
         .enumerate()
         .map(|(i, row)| {
             let selected = i == app.env_var_selected && focused;
-            let vault_display = row
-                .vault_value
-                .as_deref()
-                .map(|v| if v.len() > 40 { &v[..40] } else { v })
-                .unwrap_or("[NOT IN VAULT]");
-            if selected {
-                Row::new(vec![
-                    Cell::from(row.key.clone()).style(style_selected()),
-                    Cell::from(vault_display).style(style_selected()),
-                ])
-            } else {
-                let val_style = if row.vault_value.is_some() {
+            if let Some(val) = &row.vault_value {
+                let key_style = if selected {
+                    style_selected()
+                } else {
                     style_normal()
+                };
+                let val_style = if selected {
+                    style_selected()
+                } else {
+                    style_normal()
+                };
+
+                let wrapped = wrap_at(val, val_col_width);
+                let height = wrapped.len() as u16;
+                let val_text = Text::from(
+                    wrapped
+                        .iter()
+                        .map(|l| Line::from(Span::styled(l.clone(), val_style)))
+                        .collect::<Vec<_>>(),
+                );
+                Row::new(vec![
+                    Cell::from(row.key.clone()).style(key_style),
+                    Cell::from(val_text),
+                ])
+                .height(height)
+            } else {
+                // Not in vault — single dim row
+                let key_style = if selected {
+                    style_selected()
+                } else {
+                    style_normal()
+                };
+                let val_style = if selected {
+                    style_selected()
                 } else {
                     style_dim()
                 };
                 Row::new(vec![
-                    Cell::from(row.key.clone()).style(style_normal()),
-                    Cell::from(vault_display).style(val_style),
+                    Cell::from(row.key.clone()).style(key_style),
+                    Cell::from("[NOT IN VAULT]").style(val_style),
                 ])
+                .height(1)
             }
         })
         .collect();

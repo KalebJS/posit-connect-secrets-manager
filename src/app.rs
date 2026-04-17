@@ -75,6 +75,12 @@ pub enum StatusLevel {
     Error,
 }
 
+#[derive(Debug)]
+pub enum EditorTarget {
+    /// Edit the value of a vault key from the Vault page or Env Vars page.
+    VaultEntry(String),
+}
+
 // ---------------------------------------------------------------------------
 // Data model
 // ---------------------------------------------------------------------------
@@ -155,6 +161,10 @@ pub struct App {
     // Add-var autocomplete popup
     pub add_var_popup: Option<AddVarPopup>,
 
+    // Set by key handlers when an external editor should be opened for a vault value.
+    // Consumed and cleared by the main event loop before the next draw.
+    pub open_editor_for: Option<EditorTarget>,
+
     // Env var list
     pub env_var_selected: usize,
 
@@ -204,6 +214,7 @@ impl App {
             project_var_selected: None,
             sync_confirm: None,
             add_var_popup: None,
+            open_editor_for: None,
             env_var_selected: 0,
             vault_selected: 0,
             vault_editing: None,
@@ -992,6 +1003,11 @@ impl App {
                     self.env_var_selected += 1;
                 }
             }
+            KeyCode::Char('e') | KeyCode::Char('E') => {
+                if let Some(row) = self.env_var_rows.get(self.env_var_selected) {
+                    self.open_editor_for = Some(EditorTarget::VaultEntry(row.key.clone()));
+                }
+            }
             KeyCode::Left | KeyCode::Esc => {
                 self.sidebar_focused = true;
             }
@@ -1060,6 +1076,15 @@ impl App {
                         self.vault_edit_buffer = value;
                         self.vault_edit_field = VaultField::Value;
                         self.vault_editing = Some(self.vault_selected);
+                    }
+                }
+                KeyCode::Char('E') => {
+                    if entries_len > 0 {
+                        if let Some(key) =
+                            self.vault.entries.keys().nth(self.vault_selected).cloned()
+                        {
+                            self.open_editor_for = Some(EditorTarget::VaultEntry(key));
+                        }
                     }
                 }
                 KeyCode::Char('n') => {
@@ -1297,6 +1322,7 @@ mod tests {
             project_var_selected: None,
             sync_confirm: None,
             add_var_popup: None,
+            open_editor_for: None,
             env_var_selected: 0,
             vault_selected: 0,
             vault_editing: None,

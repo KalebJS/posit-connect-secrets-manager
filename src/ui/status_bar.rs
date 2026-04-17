@@ -26,9 +26,9 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         } else {
             match app.page {
                 Page::ProjectList => "Tab:Sidebar  ↑↓:Nav  Enter/Space:Expand  x:Toggle  a:AddVar  d:Del  ←/Esc:Sidebar  Ctrl+P:Refresh  Ctrl+C:Quit",
-                Page::EnvVarList  => "Tab:Sidebar  ↑↓:Nav  ←/Esc:Sidebar  Ctrl+C:Quit",
+                Page::EnvVarList  => "Tab:Sidebar  ↑↓:Nav  e/E:Editor  ←/Esc:Sidebar  Ctrl+C:Quit",
                 Page::Vault if app.vault_editing.is_some() => "Enter:Save  Esc:Cancel",
-                Page::Vault       => "Tab:Sidebar  ↑↓:Nav  e/Enter:Edit  n:New  d:Del  ←/Esc:Sidebar  Ctrl+U:Sync  Ctrl+C:Quit",
+                Page::Vault       => "Tab:Sidebar  ↑↓:Nav  e/Enter:Edit  E:Editor  n:New  d:Del  ←/Esc:Sidebar  Ctrl+U:Sync  Ctrl+C:Quit",
                 Page::Settings if app.settings_editing => "Enter:Confirm  Esc:Cancel",
                 Page::Settings    => "Tab:Sidebar  ↑↓:Nav  Enter/e:Edit  ←/Esc:Sidebar  Ctrl+C:Quit",
             }
