@@ -959,7 +959,7 @@ impl App {
                     self.filter_selected = 0;
                 }
             }
-            KeyCode::Enter | KeyCode::Right => {
+            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
                 self.sidebar_focused = false;
             }
             _ => {}
@@ -973,18 +973,21 @@ impl App {
             return;
         }
 
-        // f opens filter; F clears it
-        match key.code {
-            KeyCode::Char('f') => {
-                self.filter_editing = true;
-                return;
+        // f opens filter; F clears it — not while editing an entry
+        let in_edit_mode = self.vault_editing.is_some() || self.settings_editing;
+        if !in_edit_mode {
+            match key.code {
+                KeyCode::Char('f') => {
+                    self.filter_editing = true;
+                    return;
+                }
+                KeyCode::Char('F') => {
+                    self.filter_query.clear();
+                    self.filter_selected = 0;
+                    return;
+                }
+                _ => {}
             }
-            KeyCode::Char('F') => {
-                self.filter_query.clear();
-                self.filter_selected = 0;
-                return;
-            }
-            _ => {}
         }
 
         // When filter active, j/k navigate the filtered list
@@ -1146,10 +1149,30 @@ impl App {
                     self.open_editor_for = Some(EditorTarget::VaultEntry(row.key.clone()));
                 }
             }
-            KeyCode::Left | KeyCode::Esc => {
+            KeyCode::Left | KeyCode::Esc | KeyCode::Char('h') => {
                 self.sidebar_focused = true;
             }
             _ => {}
+        }
+    }
+
+    /// Resolves the currently selected vault index, accounting for active filter.
+    /// Returns None if vault is empty or filter has no matches.
+    fn effective_vault_index(&self) -> Option<usize> {
+        if self.filter_query.is_empty() {
+            if self.vault.entries.is_empty() {
+                None
+            } else {
+                Some(self.vault_selected)
+            }
+        } else {
+            self.vault
+                .entries
+                .keys()
+                .enumerate()
+                .filter(|(_, k)| self.filter_matches(k))
+                .nth(self.filter_selected)
+                .map(|(orig_i, _)| orig_i)
         }
     }
 
@@ -1203,24 +1226,22 @@ impl App {
                     }
                 }
                 KeyCode::Char('e') | KeyCode::Enter => {
-                    if entries_len > 0 {
+                    if let Some(idx) = self.effective_vault_index() {
                         let value = self
                             .vault
                             .entries
                             .values()
-                            .nth(self.vault_selected)
+                            .nth(idx)
                             .cloned()
                             .unwrap_or_default();
                         self.vault_edit_buffer = value;
                         self.vault_edit_field = VaultField::Value;
-                        self.vault_editing = Some(self.vault_selected);
+                        self.vault_editing = Some(idx);
                     }
                 }
                 KeyCode::Char('E') => {
-                    if entries_len > 0 {
-                        if let Some(key) =
-                            self.vault.entries.keys().nth(self.vault_selected).cloned()
-                        {
+                    if let Some(idx) = self.effective_vault_index() {
+                        if let Some(key) = self.vault.entries.keys().nth(idx).cloned() {
                             self.open_editor_for = Some(EditorTarget::VaultEntry(key));
                         }
                     }
@@ -1235,17 +1256,24 @@ impl App {
                     self.vault_editing = Some(new_idx);
                 }
                 KeyCode::Char('d') | KeyCode::Delete => {
-                    if entries_len > 0 {
-                        self.vault.remove_at(self.vault_selected);
+                    if let Some(idx) = self.effective_vault_index() {
+                        self.vault.remove_at(idx);
                         let new_len = self.vault.entries.len();
-                        if self.vault_selected >= new_len && self.vault_selected > 0 {
-                            self.vault_selected -= 1;
+                        if self.filter_query.is_empty() {
+                            if self.vault_selected >= new_len && self.vault_selected > 0 {
+                                self.vault_selected -= 1;
+                            }
+                        } else {
+                            let new_filtered = self.filtered_count();
+                            if self.filter_selected >= new_filtered && self.filter_selected > 0 {
+                                self.filter_selected -= 1;
+                            }
                         }
                         let _ = self.vault.save();
                         self.rebuild_env_var_rows();
                     }
                 }
-                KeyCode::Left | KeyCode::Esc => {
+                KeyCode::Left | KeyCode::Esc | KeyCode::Char('h') => {
                     self.sidebar_focused = true;
                 }
                 _ => {}
@@ -1352,7 +1380,7 @@ impl App {
                     self.settings_edit_buffer = current;
                     self.settings_editing = true;
                 }
-                KeyCode::Left | KeyCode::Esc => {
+                KeyCode::Left | KeyCode::Esc | KeyCode::Char('h') => {
                     self.sidebar_focused = true;
                 }
                 _ => {}
