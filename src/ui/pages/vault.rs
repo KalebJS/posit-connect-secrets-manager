@@ -62,18 +62,9 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let dirty = if app.vault.dirty { " ●" } else { "" };
     let title = format!(" Vault ({} entries){} ", app.vault.entries.len(), dirty);
 
-    let hint = if app.vault_editing.is_some() {
-        " [Enter: save  Esc: cancel] "
-    } else if focused {
-        " [e/Enter: edit  n: new  d: delete  ←/Esc: sidebar] "
-    } else {
-        ""
-    };
-
     let block = Block::default()
         .title(Span::styled(title, style_header()))
         .title_alignment(Alignment::Left)
-        .title_bottom(Span::styled(hint, style_dim()))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(border_style)

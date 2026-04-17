@@ -82,16 +82,10 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let title = format!(" Projects ({}) ", app.projects.len());
-    let hint = if focused {
-        " [Enter: expand  ←/Esc: sidebar] "
-    } else {
-        ""
-    };
 
     let block = Block::default()
         .title(Span::styled(title, style_header()))
         .title_alignment(Alignment::Left)
-        .title_bottom(Span::styled(hint, style_dim()))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(border_style)

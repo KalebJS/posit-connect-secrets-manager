@@ -99,19 +99,4 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     )))
     .block(refresh_block);
     f.render_widget(refresh_para, chunks[3]);
-
-    // Help hint
-    let hint = if focused {
-        if app.settings_editing {
-            " Enter: confirm  Esc: cancel"
-        } else {
-            " ↑↓: navigate  Enter/e: edit field  ←/Esc: sidebar"
-        }
-    } else {
-        ""
-    };
-    if !hint.is_empty() {
-        let hint_para = Paragraph::new(Line::from(Span::styled(format!(" {}", hint), style_dim())));
-        f.render_widget(hint_para, chunks[4]);
-    }
 }

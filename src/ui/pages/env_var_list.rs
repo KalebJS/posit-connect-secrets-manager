@@ -54,16 +54,10 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     let title = format!(" Env Vars ({}) ", app.env_var_rows.len());
-    let hint = if focused {
-        " [↑↓: navigate  ←/Esc: sidebar] "
-    } else {
-        ""
-    };
 
     let block = Block::default()
         .title(Span::styled(title, style_header()))
         .title_alignment(Alignment::Left)
-        .title_bottom(Span::styled(hint, style_dim()))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(border_style)
