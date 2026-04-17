@@ -41,7 +41,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                         Cell::from(v.clone()).style(style_normal()),
                     ]),
                     VaultField::Value => Row::new(vec![
-                        Cell::from(k.clone()).style(style_accent()),
+                        Cell::from(k.clone()).style(style_normal()),
                         Cell::from(format!("{}█", app.vault_edit_buffer)).style(style_selected()),
                     ]),
                 }
@@ -52,7 +52,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                 ])
             } else {
                 Row::new(vec![
-                    Cell::from(k.clone()).style(style_accent()),
+                    Cell::from(k.clone()).style(style_normal()),
                     Cell::from(v.clone()).style(style_normal()),
                 ])
             }

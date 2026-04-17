@@ -91,7 +91,6 @@ pub struct ProjectEntry {
 #[derive(Debug, Clone)]
 pub struct EnvVarRow {
     pub key: String,
-    pub project_name: String,
     pub vault_value: Option<String>,
 }
 
@@ -475,21 +474,19 @@ impl App {
     // -----------------------------------------------------------------------
 
     pub fn rebuild_env_var_rows(&mut self) {
-        self.env_var_rows.clear();
+        let mut map: std::collections::BTreeMap<String, Option<String>> =
+            std::collections::BTreeMap::new();
         for project in &self.projects {
             for var in &project.env_vars {
-                let vault_value = self.vault.get(&var.name).map(|s| s.to_string());
-                self.env_var_rows.push(EnvVarRow {
-                    key: var.name.clone(),
-                    project_name: project
-                        .title
-                        .clone()
-                        .unwrap_or_else(|| project.name.clone()),
-                    vault_value,
-                });
+                map.entry(var.name.clone())
+                    .or_insert_with(|| self.vault.get(&var.name).map(|s| s.to_string()));
             }
         }
-        // Clamp selections
+        self.env_var_rows = map
+            .into_iter()
+            .map(|(key, vault_value)| EnvVarRow { key, vault_value })
+            .collect();
+        // Clamp selection
         if self.env_var_selected >= self.env_var_rows.len() && !self.env_var_rows.is_empty() {
             self.env_var_selected = self.env_var_rows.len() - 1;
         }

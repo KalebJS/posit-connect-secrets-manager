@@ -18,7 +18,6 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
     let header = Row::new(vec![
         Cell::from("Env Var Key").style(style_header()),
-        Cell::from("Project").style(style_header()),
         Cell::from("Vault Value").style(style_header()),
     ])
     .height(1)
@@ -30,15 +29,14 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         .enumerate()
         .map(|(i, row)| {
             let selected = i == app.env_var_selected && focused;
+            let vault_display = row
+                .vault_value
+                .as_deref()
+                .map(|v| if v.len() > 40 { &v[..40] } else { v })
+                .unwrap_or("[NOT IN VAULT]");
             if selected {
-                let vault_display = row
-                    .vault_value
-                    .as_deref()
-                    .map(|v| if v.len() > 40 { &v[..40] } else { v })
-                    .unwrap_or("[NOT IN VAULT]");
                 Row::new(vec![
                     Cell::from(row.key.clone()).style(style_selected()),
-                    Cell::from(row.project_name.clone()).style(style_selected()),
                     Cell::from(vault_display).style(style_selected()),
                 ])
             } else {
@@ -47,14 +45,8 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                 } else {
                     style_dim()
                 };
-                let vault_display = row
-                    .vault_value
-                    .as_deref()
-                    .map(|v| if v.len() > 40 { &v[..40] } else { v })
-                    .unwrap_or("[NOT IN VAULT]");
                 Row::new(vec![
-                    Cell::from(row.key.clone()).style(style_accent()),
-                    Cell::from(row.project_name.clone()).style(style_dim()),
+                    Cell::from(row.key.clone()).style(style_normal()),
                     Cell::from(vault_display).style(val_style),
                 ])
             }
@@ -77,11 +69,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         .border_style(border_style)
         .style(Style::default().bg(COLOR_BG));
 
-    let widths = [
-        Constraint::Percentage(35),
-        Constraint::Percentage(30),
-        Constraint::Percentage(35),
-    ];
+    let widths = [Constraint::Percentage(40), Constraint::Percentage(60)];
 
     let table = Table::new(rows, widths)
         .header(header)
