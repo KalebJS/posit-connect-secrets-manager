@@ -1,5 +1,5 @@
 use super::theme::*;
-use crate::app::{App, LoadState, StatusLevel};
+use crate::app::{App, LoadState, Page, StatusLevel};
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -21,12 +21,21 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             LoadState::Loading => format!("{} ", app.spinner()),
             _ => "  ".to_string(),
         };
+        let hints = if app.sidebar_focused {
+            "Tab:Content  ↑↓:Nav  Ctrl+P:Refresh  Ctrl+C:Quit"
+        } else {
+            match app.page {
+                Page::ProjectList => "Tab:Sidebar  ↑↓:Nav  Enter/Space:Expand  ←/Esc:Sidebar  Ctrl+P:Refresh  Ctrl+C:Quit",
+                Page::EnvVarList  => "Tab:Sidebar  ↑↓:Nav  ←/Esc:Sidebar  Ctrl+C:Quit",
+                Page::Vault if app.vault_editing.is_some() => "Enter:Save  Esc:Cancel",
+                Page::Vault       => "Tab:Sidebar  ↑↓:Nav  e/Enter:Edit  n:New  d:Del  ←/Esc:Sidebar  Ctrl+U:Sync  Ctrl+C:Quit",
+                Page::Settings if app.settings_editing => "Enter:Confirm  Esc:Cancel",
+                Page::Settings    => "Tab:Sidebar  ↑↓:Nav  Enter/e:Edit  ←/Esc:Sidebar  Ctrl+C:Quit",
+            }
+        };
         Line::from(vec![
             Span::styled(spinner, style_accent()),
-            Span::styled(
-                "Tab:Focus  ↑↓:Nav  Enter:Select  e:Edit  n:New  d:Del  Ctrl+P:Refresh  Ctrl+U:Sync  Ctrl+C:Quit",
-                style_dim(),
-            ),
+            Span::styled(hints, style_dim()),
         ])
     };
 
