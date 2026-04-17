@@ -71,7 +71,21 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                     is_selected && focused && app.project_var_selected == Some(var_idx);
 
                 let in_vault = app.vault.get(&var.name).is_some();
-                let (dot, suffix, base_style) = if is_var_excluded {
+                let (dot, suffix, base_style) = if !is_whitelisted {
+                    // Project won't sync — dim all vars regardless of vault status
+                    let val_hint = if in_vault {
+                        let val = app.vault.get(&var.name).unwrap_or("");
+                        let truncated = if val.len() > 28 {
+                            format!("{}…", &val[..28])
+                        } else {
+                            val.to_string()
+                        };
+                        format!(" = {}", truncated)
+                    } else {
+                        "  [NOT IN VAULT]".to_string()
+                    };
+                    (if in_vault { "●" } else { "○" }, val_hint, style_dim())
+                } else if is_var_excluded {
                     ("[x]", "  [EXCLUDED FROM SYNC]".to_string(), style_dim())
                 } else if in_vault {
                     let val = app.vault.get(&var.name).unwrap_or("");

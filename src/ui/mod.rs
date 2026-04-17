@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame,
 };
 use theme::*;
@@ -41,6 +41,73 @@ pub fn render(f: &mut Frame, app: &mut App) {
     if let Some(names) = &app.sync_confirm.clone() {
         render_sync_modal(f, area, names);
     }
+
+    // Render add-var popup on top if active
+    if app.add_var_popup.is_some() {
+        render_add_var_popup(f, app, area);
+    }
+}
+
+fn render_add_var_popup(f: &mut Frame, app: &App, area: Rect) {
+    let Some(popup) = &app.add_var_popup else {
+        return;
+    };
+    let project_name = app
+        .projects
+        .iter()
+        .find(|p| p.guid == popup.guid)
+        .map(|p| p.title.as_deref().unwrap_or(&p.name))
+        .unwrap_or("Project");
+    let suggestions = app.add_var_suggestions();
+
+    const POPUP_W: u16 = 56;
+    let visible = suggestions.len().min(8) as u16;
+    let popup_h = (3 + visible).max(5);
+    let x = area.x + area.width.saturating_sub(POPUP_W) / 2;
+    let y = area.y + area.height.saturating_sub(popup_h) / 2;
+    let popup_area = Rect {
+        x,
+        y,
+        width: POPUP_W.min(area.width),
+        height: popup_h.min(area.height),
+    };
+
+    f.render_widget(Clear, popup_area);
+
+    let title = format!(" Add Env Var → {} ", project_name);
+    let block = Block::default()
+        .title(Span::styled(title, style_header()))
+        .title_alignment(Alignment::Center)
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(style_accent())
+        .style(Style::default().bg(COLOR_BG));
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let chunks = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(inner);
+
+    let input = Paragraph::new(Span::styled(format!(" > {}█", popup.query), style_normal()));
+    f.render_widget(input, chunks[0]);
+
+    let items: Vec<ListItem> = suggestions
+        .iter()
+        .enumerate()
+        .map(|(i, key)| {
+            let style = if i == popup.selected {
+                style_selected()
+            } else {
+                style_normal()
+            };
+            ListItem::new(Line::from(Span::styled(format!("  {}", key), style)))
+        })
+        .collect();
+    let list = List::new(items);
+    let mut state = ListState::default();
+    if !suggestions.is_empty() {
+        state.select(Some(popup.selected));
+    }
+    f.render_stateful_widget(list, chunks[1], &mut state);
 }
 
 fn render_sync_modal(f: &mut Frame, area: Rect, names: &[String]) {

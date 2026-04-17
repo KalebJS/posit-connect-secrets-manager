@@ -94,6 +94,13 @@ pub struct EnvVarRow {
     pub vault_value: Option<String>,
 }
 
+#[derive(Debug)]
+pub struct AddVarPopup {
+    pub guid: String,
+    pub query: String,
+    pub selected: usize,
+}
+
 // ---------------------------------------------------------------------------
 // Async events (background tasks → UI thread)
 // ---------------------------------------------------------------------------
@@ -109,6 +116,10 @@ pub enum AppEvent {
         error: String,
     },
     SyncComplete {
+        _guid: String,
+        result: Result<(), String>,
+    },
+    EnvVarPatched {
         _guid: String,
         result: Result<(), String>,
     },
@@ -140,6 +151,9 @@ pub struct App {
 
     // Sync confirmation modal: None = hidden; Some(names) = awaiting confirmation
     pub sync_confirm: Option<Vec<String>>,
+
+    // Add-var autocomplete popup
+    pub add_var_popup: Option<AddVarPopup>,
 
     // Env var list
     pub env_var_selected: usize,
@@ -189,6 +203,7 @@ impl App {
             project_expanded: HashSet::new(),
             project_var_selected: None,
             sync_confirm: None,
+            add_var_popup: None,
             env_var_selected: 0,
             vault_selected: 0,
             vault_editing: None,
@@ -286,6 +301,46 @@ impl App {
         });
     }
 
+    /// Returns `(guid, vars_to_send)` for every project that passes the whitelist/blacklist
+    /// filters and has at least one var remaining after filtering.
+    ///
+    /// This is the single source of truth for sync filtering; both `trigger_sync` (modal preview)
+    /// and `execute_sync` (actual HTTP calls) derive from it.
+    pub fn compute_sync_payloads(&self) -> Vec<(String, Vec<EnvVar>)> {
+        self.projects
+            .iter()
+            .filter(|p| self.config.included_projects.contains(&p.guid))
+            .filter(|p| !p.env_vars.is_empty())
+            .filter_map(|p| {
+                let excluded = self
+                    .config
+                    .excluded_vars
+                    .get(&p.guid)
+                    .cloned()
+                    .unwrap_or_default();
+                // Only include vars that have a corresponding vault value.
+                // Sending a var with no value (even as a name-only entry) causes Connect to
+                // clear that variable, so non-vault vars must be omitted entirely.
+                let merged: Vec<EnvVar> = p
+                    .env_vars
+                    .iter()
+                    .filter(|v| !excluded.contains(&v.name))
+                    .filter_map(|v| {
+                        self.vault.get(&v.name).map(|vault_val| EnvVar {
+                            name: v.name.clone(),
+                            value: Some(vault_val.to_string()),
+                        })
+                    })
+                    .collect();
+                if merged.is_empty() {
+                    None
+                } else {
+                    Some((p.guid.clone(), merged))
+                }
+            })
+            .collect()
+    }
+
     pub fn trigger_sync(&mut self) {
         if self.config.server_url.is_empty() || self.config.api_key.is_empty() {
             self.set_status(
@@ -302,15 +357,8 @@ impl App {
             return;
         }
 
-        // Compute which projects will be synced (whitelist + non-empty vars)
-        let will_sync: Vec<String> = self
-            .projects
-            .iter()
-            .filter(|p| self.config.included_projects.contains(&p.guid) && !p.env_vars.is_empty())
-            .map(|p| p.title.clone().unwrap_or_else(|| p.name.clone()))
-            .collect();
-
-        if will_sync.is_empty() {
+        let payloads = self.compute_sync_payloads();
+        if payloads.is_empty() {
             self.set_status(
                 "No projects selected for sync. Press x on a project to include it.".into(),
                 StatusLevel::Info,
@@ -318,44 +366,25 @@ impl App {
             return;
         }
 
-        // Show confirmation modal
+        // Build display names for the confirmation modal from the same set that will be synced
+        let will_sync: Vec<String> = payloads
+            .iter()
+            .filter_map(|(guid, _)| {
+                self.projects
+                    .iter()
+                    .find(|p| &p.guid == guid)
+                    .map(|p| p.title.clone().unwrap_or_else(|| p.name.clone()))
+            })
+            .collect();
+
         self.sync_confirm = Some(will_sync);
     }
 
     pub fn execute_sync(&mut self) {
-        let mut synced = 0usize;
-        for project in &self.projects {
-            // Project whitelist: always enforced
-            if !self.config.included_projects.contains(&project.guid) {
-                continue;
-            }
-            if project.env_vars.is_empty() {
-                continue;
-            }
+        let payloads = self.compute_sync_payloads();
+        let count = payloads.len();
 
-            // Var blacklist: drop excluded vars before merging
-            let excluded_vars = self
-                .config
-                .excluded_vars
-                .get(&project.guid)
-                .cloned()
-                .unwrap_or_default();
-
-            let mut merged: Vec<_> = project
-                .env_vars
-                .iter()
-                .filter(|v| !excluded_vars.contains(&v.name))
-                .cloned()
-                .collect();
-
-            // Safe merge: overlay vault values for matching keys
-            for var in merged.iter_mut() {
-                if let Some(v) = self.vault.get(&var.name) {
-                    var.value = Some(v.to_string());
-                }
-            }
-
-            let guid = project.guid.clone();
+        for (guid, merged) in payloads {
             let client = ConnectClient::new(&self.config.server_url, &self.config.api_key);
             let tx = self.tx.clone();
             tokio::spawn(async move {
@@ -378,12 +407,11 @@ impl App {
                     }
                 }
             });
-            synced += 1;
         }
 
-        if synced > 0 {
+        if count > 0 {
             self.set_status(
-                format!("Syncing {} project(s) to Connect…", synced),
+                format!("Syncing {} project(s) to Connect…", count),
                 StatusLevel::Info,
             );
         } else {
@@ -392,6 +420,66 @@ impl App {
                 StatusLevel::Info,
             );
         }
+    }
+
+    pub fn trigger_delete_var(&mut self) {
+        let Some(var_idx) = self.project_var_selected else {
+            return;
+        };
+        let Some(project) = self.projects.get(self.project_list_selected) else {
+            return;
+        };
+        if self.config.server_url.is_empty() || self.config.api_key.is_empty() {
+            self.set_status(
+                "Configure server URL and API key in Settings first".into(),
+                StatusLevel::Error,
+            );
+            return;
+        }
+        let var_name = match project.env_vars.get(var_idx) {
+            Some(v) => v.name.clone(),
+            None => return,
+        };
+        let guid = project.guid.clone();
+        // Build PATCH: all vars except the deleted one, vault overlays applied where available
+        let payload: Vec<EnvVar> = project
+            .env_vars
+            .iter()
+            .filter(|v| v.name != var_name)
+            .map(|v| EnvVar {
+                name: v.name.clone(),
+                value: self
+                    .vault
+                    .get(&v.name)
+                    .map(|s| s.to_string())
+                    .or(v.value.clone()),
+            })
+            .collect();
+        // Optimistic local update
+        if let Some(p) = self.projects.iter_mut().find(|p| p.guid == guid) {
+            p.env_vars.retain(|v| v.name != var_name);
+            let len = p.env_vars.len();
+            self.project_var_selected = if len == 0 {
+                None
+            } else {
+                Some(var_idx.min(len - 1))
+            };
+        }
+        self.rebuild_env_var_rows();
+        let client = ConnectClient::new(&self.config.server_url, &self.config.api_key);
+        let tx = self.tx.clone();
+        let gc = guid.clone();
+        tokio::spawn(async move {
+            let result = client
+                .set_env_vars(&gc, &payload)
+                .await
+                .map_err(|e| e.to_string());
+            let _ = tx.send(AppEvent::EnvVarPatched { _guid: gc, result }).await;
+        });
+        self.set_status(
+            format!("Deleting {} from project…", var_name),
+            StatusLevel::Info,
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -506,6 +594,15 @@ impl App {
                 }
             },
 
+            AppEvent::EnvVarPatched { _guid: _, result } => match result {
+                Ok(()) => {
+                    self.set_status("Change applied to project".into(), StatusLevel::Success);
+                }
+                Err(e) => {
+                    self.set_status(format!("Patch failed: {}", e), StatusLevel::Error);
+                }
+            },
+
             AppEvent::FetchError(e) => {
                 self.load_state = LoadState::Error(e.clone());
                 if self.pending_fetches > 0 {
@@ -539,6 +636,151 @@ impl App {
         }
     }
 
+    /// Returns vault keys matching the popup query that are not already on the project.
+    pub fn add_var_suggestions(&self) -> Vec<String> {
+        let Some(popup) = &self.add_var_popup else {
+            return Vec::new();
+        };
+        let q = popup.query.to_lowercase();
+        let existing: std::collections::HashSet<&str> = self
+            .projects
+            .iter()
+            .find(|p| p.guid == popup.guid)
+            .map(|p| p.env_vars.iter().map(|v| v.name.as_str()).collect())
+            .unwrap_or_default();
+        self.vault
+            .entries
+            .keys()
+            .filter(|k| !existing.contains(k.as_str()))
+            .filter(|k| q.is_empty() || k.to_lowercase().contains(&q))
+            .cloned()
+            .collect()
+    }
+
+    pub fn trigger_add_var(&mut self) {
+        let Some(project) = self.projects.get(self.project_list_selected) else {
+            return;
+        };
+        self.add_var_popup = Some(AddVarPopup {
+            guid: project.guid.clone(),
+            query: String::new(),
+            selected: 0,
+        });
+    }
+
+    pub fn commit_add_var(&mut self) {
+        let suggestions = self.add_var_suggestions();
+        let (guid, selected_key, vault_value) = if let Some(popup) = &self.add_var_popup {
+            let key = match suggestions.get(popup.selected) {
+                Some(k) => k.clone(),
+                None => return,
+            };
+            let val = match self.vault.get(&key) {
+                Some(v) => v.to_string(),
+                None => return,
+            };
+            (popup.guid.clone(), key, val)
+        } else {
+            return;
+        };
+        self.add_var_popup = None;
+
+        // Build PATCH: existing vars (vault overlays) + new var
+        let payload: Vec<EnvVar> =
+            if let Some(project) = self.projects.iter().find(|p| p.guid == guid) {
+                let mut vars: Vec<EnvVar> = project
+                    .env_vars
+                    .iter()
+                    .map(|v| EnvVar {
+                        name: v.name.clone(),
+                        value: self
+                            .vault
+                            .get(&v.name)
+                            .map(|s| s.to_string())
+                            .or(v.value.clone()),
+                    })
+                    .collect();
+                vars.push(EnvVar {
+                    name: selected_key.clone(),
+                    value: Some(vault_value),
+                });
+                vars
+            } else {
+                return;
+            };
+
+        // Optimistic local update
+        if let Some(p) = self.projects.iter_mut().find(|p| p.guid == guid) {
+            p.env_vars.push(EnvVar {
+                name: selected_key.clone(),
+                value: None,
+            });
+        }
+        self.rebuild_env_var_rows();
+
+        if self.config.server_url.is_empty() || self.config.api_key.is_empty() {
+            self.set_status(
+                "Configure server URL and API key in Settings first".into(),
+                StatusLevel::Error,
+            );
+            return;
+        }
+
+        let client = ConnectClient::new(&self.config.server_url, &self.config.api_key);
+        let tx = self.tx.clone();
+        let gc = guid.clone();
+        tokio::spawn(async move {
+            let result = client
+                .set_env_vars(&gc, &payload)
+                .await
+                .map_err(|e| e.to_string());
+            let _ = tx.send(AppEvent::EnvVarPatched { _guid: gc, result }).await;
+        });
+        self.set_status(
+            format!("Adding {} to project…", selected_key),
+            StatusLevel::Info,
+        );
+    }
+
+    fn handle_add_var_popup_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.add_var_popup = None;
+            }
+            KeyCode::Enter => {
+                self.commit_add_var();
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(p) = &mut self.add_var_popup {
+                    if p.selected > 0 {
+                        p.selected -= 1;
+                    }
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let count = self.add_var_suggestions().len();
+                if let Some(p) = &mut self.add_var_popup {
+                    if p.selected + 1 < count {
+                        p.selected += 1;
+                    }
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(p) = &mut self.add_var_popup {
+                    p.query.pop();
+                    p.selected = 0;
+                }
+            }
+            KeyCode::Char(c) => {
+                if let Some(p) = &mut self.add_var_popup {
+                    p.query.push(c);
+                    p.selected = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Input handling
     // -----------------------------------------------------------------------
@@ -563,6 +805,12 @@ impl App {
                 }
                 _ => {}
             }
+            return;
+        }
+
+        // Add-var popup intercepts all input
+        if self.add_var_popup.is_some() {
+            self.handle_add_var_popup_key(key);
             return;
         }
 
@@ -715,6 +963,14 @@ impl App {
                     }
                     let _ = self.config.save();
                 }
+            }
+            KeyCode::Char('d') => {
+                if self.project_var_selected.is_some() {
+                    self.trigger_delete_var();
+                }
+            }
+            KeyCode::Char('a') => {
+                self.trigger_add_var();
             }
             KeyCode::Left | KeyCode::Esc => {
                 self.sidebar_focused = true;
@@ -968,5 +1224,747 @@ impl App {
         self.settings_editing = false;
         self.settings_edit_buffer.clear();
         self.set_status("Settings saved".into(), StatusLevel::Success);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::types::EnvVar;
+    use crate::config::Config;
+    use crate::vault::Vault;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use std::collections::HashMap;
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    fn env_var(name: &str) -> EnvVar {
+        EnvVar {
+            name: name.to_string(),
+            value: None,
+        }
+    }
+
+    fn project(guid: &str, name: &str, vars: Vec<EnvVar>) -> ProjectEntry {
+        ProjectEntry {
+            guid: guid.to_string(),
+            name: name.to_string(),
+            title: None,
+            env_vars: vars,
+            load_state: LoadState::Idle,
+        }
+    }
+
+    fn project_with_title(guid: &str, name: &str, title: &str, vars: Vec<EnvVar>) -> ProjectEntry {
+        ProjectEntry {
+            guid: guid.to_string(),
+            name: name.to_string(),
+            title: Some(title.to_string()),
+            env_vars: vars,
+            load_state: LoadState::Idle,
+        }
+    }
+
+    fn base_config() -> Config {
+        Config {
+            server_url: "http://connect.test".into(),
+            api_key: "key".into(),
+            vault_path: String::new(),
+            last_refresh: None,
+            included_projects: Vec::new(),
+            excluded_vars: HashMap::new(),
+        }
+    }
+
+    fn make_app(config: Config, vault: Vault, projects: Vec<ProjectEntry>) -> App {
+        let (tx, rx) = tokio::sync::mpsc::channel(128);
+        App {
+            page: Page::ProjectList,
+            projects,
+            env_var_rows: Vec::new(),
+            vault,
+            config,
+            should_quit: false,
+            sidebar_focused: false,
+            project_list_selected: 0,
+            project_expanded: HashSet::new(),
+            project_var_selected: None,
+            sync_confirm: None,
+            add_var_popup: None,
+            env_var_selected: 0,
+            vault_selected: 0,
+            vault_editing: None,
+            vault_edit_buffer: String::new(),
+            vault_edit_field: VaultField::Value,
+            settings_selected: 0,
+            settings_editing: false,
+            settings_edit_buffer: String::new(),
+            tx,
+            rx,
+            status_message: None,
+            load_state: LoadState::Idle,
+            pending_fetches: 0,
+            spinner_frame: 0,
+        }
+    }
+
+    fn press(app: &mut App, code: KeyCode) {
+        app.handle_crossterm_event(crossterm::event::Event::Key(KeyEvent::new(
+            code,
+            KeyModifiers::NONE,
+        )));
+    }
+
+    // Two expanded projects: proj-a (2 vars), proj-b (1 var)
+    fn expanded_two_project_app() -> App {
+        let config = base_config();
+        let projects = vec![
+            project("guid-a", "proj-a", vec![env_var("VAR1"), env_var("VAR2")]),
+            project("guid-b", "proj-b", vec![env_var("OTHER")]),
+        ];
+        let mut app = make_app(config, Vault::load_empty(), projects);
+        app.project_expanded.insert("guid-a".into());
+        app
+    }
+
+    // -----------------------------------------------------------------------
+    // compute_sync_payloads — whitelist enforcement
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn empty_whitelist_produces_no_payloads() {
+        // No projects added to included_projects → nothing syncs
+        let config = base_config();
+        let projects = vec![project("guid-a", "proj-a", vec![env_var("FOO")])];
+        let app = make_app(config, Vault::load_empty(), projects);
+        assert!(app.compute_sync_payloads().is_empty());
+    }
+
+    #[test]
+    fn non_whitelisted_project_excluded_from_payloads() {
+        let mut config = base_config();
+        config.included_projects = vec!["guid-b".into()]; // only guid-b whitelisted
+        let projects = vec![
+            project("guid-a", "proj-a", vec![env_var("FOO")]),
+            project("guid-b", "proj-b", vec![env_var("BAR")]),
+        ];
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("BAR".into(), "v".into());
+        let app = make_app(config, vault, projects);
+        let payloads = app.compute_sync_payloads();
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].0, "guid-b");
+        assert!(!payloads.iter().any(|(g, _)| g == "guid-a"));
+    }
+
+    #[test]
+    fn whitelisted_project_with_vars_included_in_payloads() {
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        let projects = vec![project("guid-a", "proj-a", vec![env_var("FOO")])];
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("FOO".into(), "bar".into());
+        let app = make_app(config, vault, projects);
+        let payloads = app.compute_sync_payloads();
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].0, "guid-a");
+        assert_eq!(payloads[0].1[0].name, "FOO");
+    }
+
+    #[test]
+    fn whitelisted_project_with_no_vars_excluded_from_payloads() {
+        // Even if whitelisted, a project with no env vars must not appear
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        let projects = vec![project("guid-a", "proj-a", vec![])];
+        let app = make_app(config, Vault::load_empty(), projects);
+        assert!(app.compute_sync_payloads().is_empty());
+    }
+
+    #[test]
+    fn all_three_projects_mixed_whitelist() {
+        // guid-a and guid-c whitelisted; guid-b not
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into(), "guid-c".into()];
+        let projects = vec![
+            project("guid-a", "proj-a", vec![env_var("X")]),
+            project("guid-b", "proj-b", vec![env_var("Y")]),
+            project("guid-c", "proj-c", vec![env_var("Z")]),
+        ];
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("X".into(), "xval".into());
+        vault.entries.insert("Z".into(), "zval".into());
+        let app = make_app(config, vault, projects);
+        let payloads = app.compute_sync_payloads();
+        assert_eq!(payloads.len(), 2);
+        let guids: Vec<&str> = payloads.iter().map(|(g, _)| g.as_str()).collect();
+        assert!(guids.contains(&"guid-a"));
+        assert!(!guids.contains(&"guid-b"));
+        assert!(guids.contains(&"guid-c"));
+    }
+
+    // -----------------------------------------------------------------------
+    // compute_sync_payloads — var blacklist enforcement
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn blacklisted_var_absent_from_payload() {
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        config
+            .excluded_vars
+            .insert("guid-a".into(), vec!["SECRET".into()]);
+        let projects = vec![project(
+            "guid-a",
+            "proj-a",
+            vec![env_var("PUBLIC"), env_var("SECRET")],
+        )];
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("PUBLIC".into(), "pubval".into());
+        let app = make_app(config, vault, projects);
+        let payloads = app.compute_sync_payloads();
+        assert_eq!(payloads.len(), 1);
+        let vars = &payloads[0].1;
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].name, "PUBLIC");
+        assert!(!vars.iter().any(|v| v.name == "SECRET"));
+    }
+
+    #[test]
+    fn non_blacklisted_var_present_in_payload() {
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        config
+            .excluded_vars
+            .insert("guid-a".into(), vec!["SKIP".into()]);
+        let projects = vec![project(
+            "guid-a",
+            "proj-a",
+            vec![env_var("KEEP"), env_var("SKIP")],
+        )];
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("KEEP".into(), "keepval".into());
+        let app = make_app(config, vault, projects);
+        let payloads = app.compute_sync_payloads();
+        let vars = &payloads[0].1;
+        assert!(vars.iter().any(|v| v.name == "KEEP"));
+    }
+
+    #[test]
+    fn all_vars_blacklisted_project_omitted_entirely() {
+        // Prevents an accidental empty PATCH that would delete all env vars on Connect.
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        config
+            .excluded_vars
+            .insert("guid-a".into(), vec!["FOO".into(), "BAR".into()]);
+        let projects = vec![project(
+            "guid-a",
+            "proj-a",
+            vec![env_var("FOO"), env_var("BAR")],
+        )];
+        let app = make_app(config, Vault::load_empty(), projects);
+        assert!(
+            app.compute_sync_payloads().is_empty(),
+            "project with all vars blacklisted must not appear — an empty PATCH would delete all env vars"
+        );
+    }
+
+    #[test]
+    fn blacklist_is_scoped_per_project_guid() {
+        // SECRET is blacklisted for guid-a only; guid-b's SECRET must still sync.
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into(), "guid-b".into()];
+        config
+            .excluded_vars
+            .insert("guid-a".into(), vec!["SECRET".into()]);
+        let projects = vec![
+            project(
+                "guid-a",
+                "proj-a",
+                vec![env_var("PUBLIC"), env_var("SECRET")],
+            ),
+            project("guid-b", "proj-b", vec![env_var("SECRET")]),
+        ];
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("PUBLIC".into(), "pubval".into());
+        vault.entries.insert("SECRET".into(), "secval".into());
+        let app = make_app(config, vault, projects);
+        let payloads = app.compute_sync_payloads();
+        assert_eq!(payloads.len(), 2);
+
+        let a = payloads.iter().find(|(g, _)| g == "guid-a").unwrap();
+        assert_eq!(a.1.len(), 1, "guid-a must only have PUBLIC");
+        assert_eq!(a.1[0].name, "PUBLIC");
+
+        let b = payloads.iter().find(|(g, _)| g == "guid-b").unwrap();
+        assert_eq!(b.1.len(), 1, "guid-b's SECRET must not be filtered");
+        assert_eq!(b.1[0].name, "SECRET");
+    }
+
+    #[test]
+    fn empty_excluded_vars_map_does_not_affect_sync() {
+        // excluded_vars exists in config but has no entry for this project
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        config
+            .excluded_vars
+            .insert("guid-other".into(), vec!["X".into()]);
+        let projects = vec![project("guid-a", "proj-a", vec![env_var("FOO")])];
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("FOO".into(), "fooval".into());
+        let app = make_app(config, vault, projects);
+        let payloads = app.compute_sync_payloads();
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].1.len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // compute_sync_payloads — vault value overlay
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn vault_value_overlaid_for_included_var() {
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("DB_PASS".into(), "s3cr3t".into());
+        let projects = vec![project("guid-a", "proj-a", vec![env_var("DB_PASS")])];
+        let app = make_app(config, vault, projects);
+        let payloads = app.compute_sync_payloads();
+        assert_eq!(payloads[0].1[0].value.as_deref(), Some("s3cr3t"));
+    }
+
+    #[test]
+    fn vault_value_for_var_not_on_project_is_not_injected() {
+        // Vault has a key that the project doesn't have — must not appear in payload.
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("FOO".into(), "fooval".into());
+        vault.entries.insert("EXTRA".into(), "value".into());
+        // Project only has FOO; EXTRA is vault-only and must not be injected
+        let projects = vec![project("guid-a", "proj-a", vec![env_var("FOO")])];
+        let app = make_app(config, vault, projects);
+        let payloads = app.compute_sync_payloads();
+        assert_eq!(payloads[0].1.len(), 1);
+        assert_eq!(payloads[0].1[0].name, "FOO");
+        assert!(!payloads[0].1.iter().any(|v| v.name == "EXTRA"));
+    }
+
+    #[test]
+    fn blacklisted_var_vault_value_not_sent() {
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        config
+            .excluded_vars
+            .insert("guid-a".into(), vec!["DB_PASS".into()]);
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("DB_PASS".into(), "s3cr3t".into());
+        vault.entries.insert("OTHER".into(), "fine".into());
+        let projects = vec![project(
+            "guid-a",
+            "proj-a",
+            vec![env_var("DB_PASS"), env_var("OTHER")],
+        )];
+        let app = make_app(config, vault, projects);
+        let payloads = app.compute_sync_payloads();
+        let vars = &payloads[0].1;
+        assert!(
+            !vars.iter().any(|v| v.name == "DB_PASS"),
+            "blacklisted var must not appear"
+        );
+        assert_eq!(
+            vars[0].value.as_deref(),
+            Some("fine"),
+            "OTHER's vault value must be applied"
+        );
+    }
+
+    #[test]
+    fn var_without_vault_entry_excluded_from_payload() {
+        // Non-vault vars are omitted from the PATCH to avoid clearing their values on Connect.
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        let projects = vec![project("guid-a", "proj-a", vec![env_var("FOO")])];
+        let app = make_app(config, Vault::load_empty(), projects);
+        assert!(app.compute_sync_payloads().is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // trigger_sync — modal preview
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn trigger_sync_empty_whitelist_sets_status_not_modal() {
+        let config = base_config();
+        let projects = vec![project("guid-a", "proj-a", vec![env_var("X")])];
+        let mut app = make_app(config, Vault::load_empty(), projects);
+        app.trigger_sync();
+        assert!(
+            app.sync_confirm.is_none(),
+            "no modal when whitelist is empty"
+        );
+        assert!(
+            app.status_message.is_some(),
+            "status message should explain"
+        );
+    }
+
+    #[test]
+    fn trigger_sync_whitelisted_project_with_vars_shows_modal() {
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        let projects = vec![project("guid-a", "proj-a", vec![env_var("X")])];
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("X".into(), "xval".into());
+        let mut app = make_app(config, vault, projects);
+        app.trigger_sync();
+        let names = app.sync_confirm.as_ref().expect("modal must be shown");
+        assert_eq!(names.len(), 1);
+        assert_eq!(names[0], "proj-a");
+    }
+
+    #[test]
+    fn trigger_sync_uses_title_over_name_in_modal() {
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        let p = project_with_title("guid-a", "proj-a", "My Pretty App", vec![env_var("X")]);
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("X".into(), "xval".into());
+        let mut app = make_app(config, vault, vec![p]);
+        app.trigger_sync();
+        let names = app.sync_confirm.as_ref().unwrap();
+        assert_eq!(names[0], "My Pretty App");
+    }
+
+    #[test]
+    fn trigger_sync_whitelisted_but_no_vars_no_modal() {
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        let projects = vec![project("guid-a", "proj-a", vec![])];
+        let mut app = make_app(config, Vault::load_empty(), projects);
+        app.trigger_sync();
+        assert!(app.sync_confirm.is_none());
+        assert!(app.status_message.is_some());
+    }
+
+    #[test]
+    fn trigger_sync_whitelisted_all_vars_blacklisted_no_modal() {
+        // After blacklisting removes all vars, no modal — equivalent to nothing to sync.
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        config
+            .excluded_vars
+            .insert("guid-a".into(), vec!["FOO".into()]);
+        let projects = vec![project("guid-a", "proj-a", vec![env_var("FOO")])];
+        let mut app = make_app(config, Vault::load_empty(), projects);
+        app.trigger_sync();
+        assert!(app.sync_confirm.is_none());
+    }
+
+    #[test]
+    fn trigger_sync_modal_lists_only_whitelisted_projects() {
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()]; // only a
+        let projects = vec![
+            project("guid-a", "proj-a", vec![env_var("X")]),
+            project("guid-b", "proj-b", vec![env_var("Y")]),
+        ];
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("X".into(), "xval".into());
+        let mut app = make_app(config, vault, projects);
+        app.trigger_sync();
+        let names = app.sync_confirm.as_ref().unwrap();
+        assert_eq!(names.len(), 1);
+        assert_eq!(names[0], "proj-a");
+        assert!(!names.iter().any(|n| n == "proj-b"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Navigation — project_list_selected and project_var_selected
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn nav_down_from_project_row_enters_first_var_when_expanded() {
+        let mut app = expanded_two_project_app();
+        assert_eq!(app.project_list_selected, 0);
+        assert!(app.project_var_selected.is_none());
+        press(&mut app, KeyCode::Down);
+        assert_eq!(app.project_list_selected, 0, "must stay on same project");
+        assert_eq!(app.project_var_selected, Some(0));
+    }
+
+    #[test]
+    fn nav_down_advances_through_vars() {
+        let mut app = expanded_two_project_app();
+        app.project_var_selected = Some(0);
+        press(&mut app, KeyCode::Down);
+        assert_eq!(app.project_list_selected, 0);
+        assert_eq!(app.project_var_selected, Some(1));
+    }
+
+    #[test]
+    fn nav_down_from_last_var_moves_to_next_project() {
+        let mut app = expanded_two_project_app();
+        app.project_var_selected = Some(1); // proj-a has 2 vars; this is the last
+        press(&mut app, KeyCode::Down);
+        assert_eq!(app.project_list_selected, 1, "must move to proj-b");
+        assert!(app.project_var_selected.is_none());
+    }
+
+    #[test]
+    fn nav_down_does_not_advance_past_last_project() {
+        let mut app = expanded_two_project_app();
+        app.project_list_selected = 1;
+        press(&mut app, KeyCode::Down);
+        assert_eq!(app.project_list_selected, 1);
+    }
+
+    #[test]
+    fn nav_up_from_first_var_returns_to_project_row() {
+        let mut app = expanded_two_project_app();
+        app.project_var_selected = Some(0);
+        press(&mut app, KeyCode::Up);
+        assert_eq!(app.project_list_selected, 0);
+        assert!(app.project_var_selected.is_none());
+    }
+
+    #[test]
+    fn nav_up_within_vars() {
+        let mut app = expanded_two_project_app();
+        app.project_var_selected = Some(1);
+        press(&mut app, KeyCode::Up);
+        assert_eq!(app.project_var_selected, Some(0));
+    }
+
+    #[test]
+    fn nav_up_from_project_row_enters_prev_projects_last_var() {
+        let mut app = expanded_two_project_app();
+        app.project_list_selected = 1;
+        app.project_var_selected = None;
+        press(&mut app, KeyCode::Up);
+        // proj-a is expanded with 2 vars; should land on last (index 1)
+        assert_eq!(app.project_list_selected, 0);
+        assert_eq!(app.project_var_selected, Some(1));
+    }
+
+    #[test]
+    fn nav_up_does_not_go_before_first_project() {
+        let app_config = base_config();
+        let projects = vec![project("guid-a", "proj-a", vec![])];
+        let mut app = make_app(app_config, Vault::load_empty(), projects);
+        press(&mut app, KeyCode::Up);
+        assert_eq!(app.project_list_selected, 0);
+    }
+
+    #[test]
+    fn nav_down_collapsed_project_skips_vars() {
+        // proj-a is NOT expanded; pressing down must jump straight to proj-b
+        let app_config = base_config();
+        let projects = vec![
+            project("guid-a", "proj-a", vec![env_var("X")]),
+            project("guid-b", "proj-b", vec![env_var("Y")]),
+        ];
+        let mut app = make_app(app_config, Vault::load_empty(), projects);
+        // project_expanded is empty — proj-a is collapsed
+        press(&mut app, KeyCode::Down);
+        assert_eq!(app.project_list_selected, 1);
+        assert!(app.project_var_selected.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // x-key — whitelist and blacklist toggling
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn x_on_project_row_adds_to_whitelist() {
+        let config = base_config();
+        let projects = vec![project("guid-a", "proj-a", vec![])];
+        let mut app = make_app(config, Vault::load_empty(), projects);
+        press(&mut app, KeyCode::Char('x'));
+        assert!(
+            app.config.included_projects.contains(&"guid-a".to_string()),
+            "guid-a must be in whitelist after x"
+        );
+    }
+
+    #[test]
+    fn x_on_whitelisted_project_removes_it() {
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        let projects = vec![project("guid-a", "proj-a", vec![])];
+        let mut app = make_app(config, Vault::load_empty(), projects);
+        press(&mut app, KeyCode::Char('x'));
+        assert!(
+            app.config.included_projects.is_empty(),
+            "guid-a must be removed from whitelist"
+        );
+    }
+
+    #[test]
+    fn x_toggle_is_idempotent_addremove() {
+        let config = base_config();
+        let projects = vec![project("guid-a", "proj-a", vec![])];
+        let mut app = make_app(config, Vault::load_empty(), projects);
+        press(&mut app, KeyCode::Char('x')); // add
+        press(&mut app, KeyCode::Char('x')); // remove
+        assert!(app.config.included_projects.is_empty());
+    }
+
+    #[test]
+    fn x_only_affects_selected_project() {
+        let config = base_config();
+        let projects = vec![
+            project("guid-a", "proj-a", vec![]),
+            project("guid-b", "proj-b", vec![]),
+        ];
+        let mut app = make_app(config, Vault::load_empty(), projects);
+        app.project_list_selected = 1; // cursor on proj-b
+        press(&mut app, KeyCode::Char('x'));
+        assert!(!app.config.included_projects.contains(&"guid-a".to_string()));
+        assert!(app.config.included_projects.contains(&"guid-b".to_string()));
+    }
+
+    #[test]
+    fn x_on_var_row_adds_to_blacklist() {
+        let config = base_config();
+        let projects = vec![project(
+            "guid-a",
+            "proj-a",
+            vec![env_var("FOO"), env_var("BAR")],
+        )];
+        let mut app = make_app(config, Vault::load_empty(), projects);
+        app.project_expanded.insert("guid-a".into());
+        app.project_var_selected = Some(0); // cursor on FOO
+        press(&mut app, KeyCode::Char('x'));
+        let excl = app
+            .config
+            .excluded_vars
+            .get("guid-a")
+            .expect("entry must exist");
+        assert!(excl.contains(&"FOO".to_string()));
+        assert!(
+            !excl.contains(&"BAR".to_string()),
+            "BAR must not be affected"
+        );
+    }
+
+    #[test]
+    fn x_on_blacklisted_var_removes_it() {
+        let mut config = base_config();
+        config
+            .excluded_vars
+            .insert("guid-a".into(), vec!["FOO".into()]);
+        let projects = vec![project("guid-a", "proj-a", vec![env_var("FOO")])];
+        let mut app = make_app(config, Vault::load_empty(), projects);
+        app.project_expanded.insert("guid-a".into());
+        app.project_var_selected = Some(0);
+        press(&mut app, KeyCode::Char('x'));
+        let excl = app.config.excluded_vars.get("guid-a");
+        assert!(
+            excl.map_or(true, |v| !v.contains(&"FOO".to_string())),
+            "FOO must be removed from blacklist"
+        );
+    }
+
+    #[test]
+    fn x_on_var_does_not_affect_other_projects_blacklist() {
+        let config = base_config();
+        let projects = vec![
+            project("guid-a", "proj-a", vec![env_var("SECRET")]),
+            project("guid-b", "proj-b", vec![env_var("SECRET")]),
+        ];
+        let mut app = make_app(config, Vault::load_empty(), projects);
+        app.project_list_selected = 0;
+        app.project_expanded.insert("guid-a".into());
+        app.project_var_selected = Some(0); // SECRET in proj-a
+        press(&mut app, KeyCode::Char('x'));
+        // guid-b's SECRET must not be blacklisted
+        assert!(app
+            .config
+            .excluded_vars
+            .get("guid-b")
+            .map_or(true, |v| !v.contains(&"SECRET".to_string())));
+    }
+
+    // -----------------------------------------------------------------------
+    // Modal key handling
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn modal_enter_clears_sync_confirm() {
+        let config = base_config();
+        let mut app = make_app(config, Vault::load_empty(), vec![]);
+        app.sync_confirm = Some(vec!["proj-a".into()]);
+        press(&mut app, KeyCode::Enter);
+        assert!(app.sync_confirm.is_none());
+    }
+
+    #[test]
+    fn modal_y_clears_sync_confirm() {
+        let config = base_config();
+        let mut app = make_app(config, Vault::load_empty(), vec![]);
+        app.sync_confirm = Some(vec!["proj-a".into()]);
+        press(&mut app, KeyCode::Char('y'));
+        assert!(app.sync_confirm.is_none());
+    }
+
+    #[test]
+    fn modal_esc_cancels_without_sync() {
+        let config = base_config();
+        let mut app = make_app(config, Vault::load_empty(), vec![]);
+        app.sync_confirm = Some(vec!["proj-a".into()]);
+        press(&mut app, KeyCode::Esc);
+        assert!(app.sync_confirm.is_none());
+    }
+
+    #[test]
+    fn modal_n_cancels_without_sync() {
+        let config = base_config();
+        let mut app = make_app(config, Vault::load_empty(), vec![]);
+        app.sync_confirm = Some(vec!["proj-a".into()]);
+        press(&mut app, KeyCode::Char('n'));
+        assert!(app.sync_confirm.is_none());
+    }
+
+    #[test]
+    fn modal_other_keys_do_not_dismiss_it() {
+        let config = base_config();
+        let mut app = make_app(config, Vault::load_empty(), vec![]);
+        app.sync_confirm = Some(vec!["proj-a".into()]);
+        press(&mut app, KeyCode::Char('q'));
+        press(&mut app, KeyCode::Down);
+        press(&mut app, KeyCode::Tab);
+        assert!(app.sync_confirm.is_some(), "modal must remain open");
+    }
+
+    #[test]
+    fn ctrl_u_without_modal_open_does_not_call_execute_sync_directly() {
+        // When modal is shown, Ctrl+U should not re-open another modal on top.
+        let mut config = base_config();
+        config.included_projects = vec!["guid-a".into()];
+        let projects = vec![project("guid-a", "proj-a", vec![env_var("X")])];
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("X".into(), "xval".into());
+        let mut app = make_app(config, vault, projects);
+        // First Ctrl+U opens the modal
+        app.trigger_sync();
+        assert!(app.sync_confirm.is_some());
+        // A second Ctrl+U while modal is open must be swallowed by modal handler, not re-trigger
+        let ctrl_u =
+            crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        app.handle_crossterm_event(ctrl_u);
+        // 'u' is not y/Enter/Esc/n so modal stays open
+        assert!(
+            app.sync_confirm.is_some(),
+            "modal must remain; Ctrl+U must not stack"
+        );
     }
 }
