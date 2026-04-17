@@ -29,6 +29,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     for (flat_idx, project) in app.projects.iter().enumerate() {
         let is_selected = flat_idx == app.project_list_selected;
         let is_expanded = app.project_expanded.contains(&project.guid);
+        let is_whitelisted = app.config.included_projects.contains(&project.guid);
         let expand_icon = if is_expanded { "▾" } else { "▸" };
         let display_name = project.title.as_deref().unwrap_or(&project.name);
 
@@ -39,15 +40,20 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         };
 
         let guid_short: String = project.guid.chars().take(8).collect();
+        let sync_marker = if is_whitelisted { "[✓]" } else { "[ ]" };
         let label = format!(
-            "  {} {}  {}{}",
-            expand_icon, display_name, guid_short, loading_badge
+            "  {} {} {}  {}{}",
+            expand_icon, sync_marker, display_name, guid_short, loading_badge
         );
 
-        let style = if is_selected && focused {
+        // Cursor is on this project row (not on a var sub-row)
+        let cursor_on_project = is_selected && app.project_var_selected.is_none();
+        let style = if cursor_on_project && focused {
             style_selected()
-        } else {
+        } else if is_whitelisted {
             style_normal()
+        } else {
+            style_dim()
         };
         items.push(ListItem::new(Line::from(Span::styled(label, style))));
 
@@ -58,9 +64,16 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                     style_dim(),
                 ))));
             }
-            for var in &project.env_vars {
+            let excl_vars = app.config.excluded_vars.get(&project.guid);
+            for (var_idx, var) in project.env_vars.iter().enumerate() {
+                let is_var_excluded = excl_vars.is_some_and(|ev| ev.contains(&var.name));
+                let cursor_on_var =
+                    is_selected && focused && app.project_var_selected == Some(var_idx);
+
                 let in_vault = app.vault.get(&var.name).is_some();
-                let (dot, suffix, style) = if in_vault {
+                let (dot, suffix, base_style) = if is_var_excluded {
+                    ("[x]", "  [EXCLUDED FROM SYNC]".to_string(), style_dim())
+                } else if in_vault {
                     let val = app.vault.get(&var.name).unwrap_or("");
                     let truncated = if val.len() > 28 {
                         format!("{}…", &val[..28])
@@ -75,7 +88,13 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                 } else {
                     ("○", "  [NOT IN VAULT]".to_string(), style_dim())
                 };
+
                 let line = format!("      {} {}{}", dot, var.name, suffix);
+                let style = if cursor_on_var {
+                    style_selected()
+                } else {
+                    base_style
+                };
                 items.push(ListItem::new(Line::from(Span::styled(line, style))));
             }
         }
@@ -91,10 +110,14 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         .border_style(border_style)
         .style(Style::default().bg(COLOR_BG));
 
-    // Compute the flat list index of the selected project (accounts for expanded rows above it)
+    // Compute the flat list index of the highlighted row (project or var)
     let mut flat_selected = 0usize;
     for (idx, project) in app.projects.iter().enumerate() {
         if idx == app.project_list_selected {
+            // Add offset for sub-selected var
+            if let Some(var_idx) = app.project_var_selected {
+                flat_selected += 1 + var_idx; // project row + var offset
+            }
             break;
         }
         flat_selected += 1; // the project row itself

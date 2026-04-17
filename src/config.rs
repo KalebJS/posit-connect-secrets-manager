@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use dirs::config_dir;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -10,6 +11,12 @@ pub struct Config {
     pub vault_path: String,
     /// RFC3339 timestamp of last successful project refresh
     pub last_refresh: Option<String>,
+    /// Whitelist: GUIDs of projects to include in sync. Empty = nothing syncs.
+    #[serde(default)]
+    pub included_projects: Vec<String>,
+    /// Blacklist: per-GUID list of env var names to skip during sync.
+    #[serde(default)]
+    pub excluded_vars: HashMap<String, Vec<String>>,
 }
 
 impl Config {

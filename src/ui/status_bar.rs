@@ -25,7 +25,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             "Tab:Content  ↑↓:Nav  Ctrl+P:Refresh  Ctrl+C:Quit"
         } else {
             match app.page {
-                Page::ProjectList => "Tab:Sidebar  ↑↓:Nav  Enter/Space:Expand  ←/Esc:Sidebar  Ctrl+P:Refresh  Ctrl+C:Quit",
+                Page::ProjectList => "Tab:Sidebar  ↑↓:Nav  Enter/Space:Expand  x:Toggle  ←/Esc:Sidebar  Ctrl+P:Refresh  Ctrl+C:Quit",
                 Page::EnvVarList  => "Tab:Sidebar  ↑↓:Nav  ←/Esc:Sidebar  Ctrl+C:Quit",
                 Page::Vault if app.vault_editing.is_some() => "Enter:Save  Esc:Cancel",
                 Page::Vault       => "Tab:Sidebar  ↑↓:Nav  e/Enter:Edit  n:New  d:Del  ←/Esc:Sidebar  Ctrl+U:Sync  Ctrl+C:Quit",

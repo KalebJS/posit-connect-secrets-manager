@@ -44,7 +44,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     let block = Block::default()
-        .title(Span::styled(" ◈ POSIT SECRETS ", style_header()))
+        .title(Span::styled(" POSIT SECRETS ", style_header()))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)

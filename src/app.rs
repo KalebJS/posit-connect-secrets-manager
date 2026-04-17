@@ -135,6 +135,11 @@ pub struct App {
     // Project list
     pub project_list_selected: usize,
     pub project_expanded: HashSet<String>,
+    /// None = cursor on project row; Some(n) = cursor on nth var of selected project
+    pub project_var_selected: Option<usize>,
+
+    // Sync confirmation modal: None = hidden; Some(names) = awaiting confirmation
+    pub sync_confirm: Option<Vec<String>>,
 
     // Env var list
     pub env_var_selected: usize,
@@ -182,6 +187,8 @@ impl App {
             sidebar_focused: true,
             project_list_selected: 0,
             project_expanded: HashSet::new(),
+            project_var_selected: None,
+            sync_confirm: None,
             env_var_selected: 0,
             vault_selected: 0,
             vault_editing: None,
@@ -295,13 +302,53 @@ impl App {
             return;
         }
 
+        // Compute which projects will be synced (whitelist + non-empty vars)
+        let will_sync: Vec<String> = self
+            .projects
+            .iter()
+            .filter(|p| self.config.included_projects.contains(&p.guid) && !p.env_vars.is_empty())
+            .map(|p| p.title.clone().unwrap_or_else(|| p.name.clone()))
+            .collect();
+
+        if will_sync.is_empty() {
+            self.set_status(
+                "No projects selected for sync. Press x on a project to include it.".into(),
+                StatusLevel::Info,
+            );
+            return;
+        }
+
+        // Show confirmation modal
+        self.sync_confirm = Some(will_sync);
+    }
+
+    pub fn execute_sync(&mut self) {
         let mut synced = 0usize;
         for project in &self.projects {
+            // Project whitelist: always enforced
+            if !self.config.included_projects.contains(&project.guid) {
+                continue;
+            }
             if project.env_vars.is_empty() {
                 continue;
             }
-            // Safe merge: keep all current vars, overlay vault values for matching keys
-            let mut merged = project.env_vars.clone();
+
+            // Var blacklist: drop excluded vars before merging
+            let excluded_vars = self
+                .config
+                .excluded_vars
+                .get(&project.guid)
+                .cloned()
+                .unwrap_or_default();
+
+            let mut merged: Vec<_> = project
+                .env_vars
+                .iter()
+                .filter(|v| !excluded_vars.contains(&v.name))
+                .cloned()
+                .collect();
+
+            // Safe merge: overlay vault values for matching keys
             for var in merged.iter_mut() {
                 if let Some(v) = self.vault.get(&var.name) {
                     var.value = Some(v.to_string());
@@ -504,6 +551,21 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) {
+        // Confirmation modal intercepts all input
+        if self.sync_confirm.is_some() {
+            match key.code {
+                KeyCode::Enter | KeyCode::Char('y') => {
+                    self.sync_confirm = None;
+                    self.execute_sync();
+                }
+                KeyCode::Esc | KeyCode::Char('n') => {
+                    self.sync_confirm = None;
+                }
+                _ => {}
+            }
+            return;
+        }
+
         // Global shortcuts
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
@@ -570,23 +632,88 @@ impl App {
         let count = self.projects.len();
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
-                if count > 0 && self.project_list_selected > 0 {
+                if count == 0 {
+                    return;
+                }
+                if let Some(var_idx) = self.project_var_selected {
+                    if var_idx > 0 {
+                        self.project_var_selected = Some(var_idx - 1);
+                    } else {
+                        self.project_var_selected = None;
+                    }
+                } else if self.project_list_selected > 0 {
                     self.project_list_selected -= 1;
+                    // If prev project is expanded with vars, land on its last var
+                    let prev = &self.projects[self.project_list_selected];
+                    if self.project_expanded.contains(&prev.guid) && !prev.env_vars.is_empty() {
+                        self.project_var_selected = Some(prev.env_vars.len() - 1);
+                    }
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if self.project_list_selected + 1 < count {
-                    self.project_list_selected += 1;
+                if count == 0 {
+                    return;
+                }
+                if let Some(var_idx) = self.project_var_selected {
+                    let var_count = self.projects[self.project_list_selected].env_vars.len();
+                    if var_idx + 1 < var_count {
+                        self.project_var_selected = Some(var_idx + 1);
+                    } else if self.project_list_selected + 1 < count {
+                        self.project_list_selected += 1;
+                        self.project_var_selected = None;
+                    }
+                } else {
+                    let project = &self.projects[self.project_list_selected];
+                    if self.project_expanded.contains(&project.guid) && !project.env_vars.is_empty()
+                    {
+                        self.project_var_selected = Some(0);
+                    } else if self.project_list_selected + 1 < count {
+                        self.project_list_selected += 1;
+                    }
                 }
             }
             KeyCode::Enter | KeyCode::Char(' ') => {
+                // Only toggle expand when cursor is on the project row
+                if self.project_var_selected.is_none() {
+                    if let Some(project) = self.projects.get(self.project_list_selected) {
+                        let guid = project.guid.clone();
+                        if self.project_expanded.contains(&guid) {
+                            self.project_expanded.remove(&guid);
+                            self.project_var_selected = None;
+                        } else {
+                            self.project_expanded.insert(guid);
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('x') => {
                 if let Some(project) = self.projects.get(self.project_list_selected) {
                     let guid = project.guid.clone();
-                    if self.project_expanded.contains(&guid) {
-                        self.project_expanded.remove(&guid);
+                    if let Some(var_idx) = self.project_var_selected {
+                        // Toggle var blacklist for this project
+                        if let Some(var) = project.env_vars.get(var_idx) {
+                            let var_name = var.name.clone();
+                            let entry = self.config.excluded_vars.entry(guid).or_default();
+                            if let Some(pos) = entry.iter().position(|v| v == &var_name) {
+                                entry.remove(pos);
+                            } else {
+                                entry.push(var_name);
+                            }
+                        }
                     } else {
-                        self.project_expanded.insert(guid);
+                        // Toggle project whitelist
+                        if let Some(pos) = self
+                            .config
+                            .included_projects
+                            .iter()
+                            .position(|g| g == &guid)
+                        {
+                            self.config.included_projects.remove(pos);
+                        } else {
+                            self.config.included_projects.push(guid);
+                        }
                     }
+                    let _ = self.config.save();
                 }
             }
             KeyCode::Left | KeyCode::Esc => {
