@@ -1351,6 +1351,7 @@ dependencies = [
  "futures",
  "indexmap",
  "ratatui",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

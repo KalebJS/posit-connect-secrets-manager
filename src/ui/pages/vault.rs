@@ -40,61 +40,50 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let val_col_width = (area.width.saturating_sub(3) as usize * 60 / 100).max(10);
 
     let editing_idx = app.vault_editing;
+    let filtering = !app.filter_query.is_empty();
 
-    let rows: Vec<Row> = app
+    let filtered_entries: Vec<(usize, &String, &String)> = app
         .vault
         .entries
         .iter()
         .enumerate()
-        .map(|(i, (k, v))| {
-            let is_selected = i == app.vault_selected && focused;
-            let is_editing = editing_idx == Some(i);
-
-            if is_editing {
-                // Editing row: single-line, show inline cursor
-                match app.vault_edit_field {
-                    VaultField::Key => Row::new(vec![
-                        Cell::from(format!("{}█", app.vault_edit_buffer)).style(style_selected()),
-                        Cell::from(v.clone()).style(style_normal()),
-                    ])
-                    .height(1),
-                    VaultField::Value => Row::new(vec![
-                        Cell::from(k.clone()).style(style_normal()),
-                        Cell::from(format!("{}█", app.vault_edit_buffer)).style(style_selected()),
-                    ])
-                    .height(1),
-                }
-            } else {
-                let key_style = if is_selected {
-                    style_selected()
-                } else {
-                    style_normal()
-                };
-                let val_style = if is_selected {
-                    style_selected()
-                } else {
-                    style_normal()
-                };
-
-                let wrapped = wrap_at(v, val_col_width);
-                let height = wrapped.len() as u16;
-                let val_text = Text::from(
-                    wrapped
-                        .iter()
-                        .map(|l| Line::from(Span::styled(l.clone(), val_style)))
-                        .collect::<Vec<_>>(),
-                );
-                Row::new(vec![
-                    Cell::from(k.clone()).style(key_style),
-                    Cell::from(val_text),
-                ])
-                .height(height)
-            }
-        })
+        .filter(|(_, (k, _))| app.filter_matches(k))
+        .map(|(i, (k, v))| (i, k, v))
         .collect();
 
+    let rows: Vec<Row> = if filtering {
+        filtered_entries
+            .iter()
+            .enumerate()
+            .map(|(vis_i, (orig_i, k, v))| {
+                let is_selected = vis_i == app.filter_selected && focused;
+                let is_editing = editing_idx == Some(*orig_i);
+                vault_row(is_selected, is_editing, k, v, val_col_width, app)
+            })
+            .collect()
+    } else {
+        app.vault
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(i, (k, v))| {
+                let is_selected = i == app.vault_selected && focused;
+                let is_editing = editing_idx == Some(i);
+                vault_row(is_selected, is_editing, k, v, val_col_width, app)
+            })
+            .collect()
+    };
     let dirty = if app.vault.dirty { " ●" } else { "" };
-    let title = format!(" Vault ({} entries){} ", app.vault.entries.len(), dirty);
+    let title = if filtering {
+        format!(
+            " Vault ({}/{} entries){} ",
+            filtered_entries.len(),
+            app.vault.entries.len(),
+            dirty
+        )
+    } else {
+        format!(" Vault ({} entries){} ", app.vault.entries.len(), dirty)
+    };
 
     let block = Block::default()
         .title(Span::styled(title, style_header()))
@@ -113,8 +102,60 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         .column_spacing(1);
 
     let mut state = TableState::default();
-    if !app.vault.entries.is_empty() {
+    if filtering {
+        if !filtered_entries.is_empty() {
+            state.select(Some(app.filter_selected));
+        }
+    } else if !app.vault.entries.is_empty() {
         state.select(Some(app.vault_selected));
     }
     f.render_stateful_widget(table, area, &mut state);
+}
+
+fn vault_row<'a>(
+    is_selected: bool,
+    is_editing: bool,
+    k: &'a str,
+    v: &'a str,
+    val_col_width: usize,
+    app: &'a App,
+) -> Row<'a> {
+    if is_editing {
+        match app.vault_edit_field {
+            VaultField::Key => Row::new(vec![
+                Cell::from(format!("{}█", app.vault_edit_buffer)).style(style_selected()),
+                Cell::from(v.to_string()).style(style_normal()),
+            ])
+            .height(1),
+            VaultField::Value => Row::new(vec![
+                Cell::from(k.to_string()).style(style_normal()),
+                Cell::from(format!("{}█", app.vault_edit_buffer)).style(style_selected()),
+            ])
+            .height(1),
+        }
+    } else {
+        let key_style = if is_selected {
+            style_selected()
+        } else {
+            style_normal()
+        };
+        let val_style = if is_selected {
+            style_selected()
+        } else {
+            style_normal()
+        };
+        let wrapped = wrap_at(v, val_col_width);
+        let height = wrapped.len() as u16;
+        let val_text = Text::from(
+            wrapped
+                .iter()
+                .map(|l| Line::from(Span::styled(l.clone(), val_style)))
+                .collect::<Vec<_>>(),
+        );
+        Row::new(vec![
+            Cell::from(k.to_string()).style(key_style),
+            Cell::from(val_text),
+        ])
+        .height(height)
+    }
 }

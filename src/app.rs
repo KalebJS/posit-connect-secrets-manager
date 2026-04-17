@@ -179,6 +179,11 @@ pub struct App {
     pub settings_editing: bool,
     pub settings_edit_buffer: String,
 
+    // Filter
+    pub filter_query: String,
+    pub filter_editing: bool,
+    pub filter_selected: usize,
+
     // Async
     pub tx: mpsc::Sender<AppEvent>,
     pub rx: mpsc::Receiver<AppEvent>,
@@ -223,6 +228,9 @@ impl App {
             settings_selected: 0,
             settings_editing: false,
             settings_edit_buffer: String::new(),
+            filter_query: String::new(),
+            filter_editing: false,
+            filter_selected: 0,
             tx,
             rx,
             status_message: None,
@@ -529,6 +537,11 @@ impl App {
                         load_state: LoadState::Loading,
                     });
                 }
+                self.projects.sort_by(|a, b| {
+                    let a_name = a.title.as_deref().unwrap_or(&a.name);
+                    let b_name = b.title.as_deref().unwrap_or(&b.name);
+                    a_name.to_lowercase().cmp(&b_name.to_lowercase())
+                });
 
                 for (guid, _name, server_url, api_key) in to_fetch {
                     let api_key = api_key.unwrap_or_default();
@@ -631,7 +644,11 @@ impl App {
     pub fn rebuild_env_var_rows(&mut self) {
         let mut map: std::collections::BTreeMap<String, Option<String>> =
             std::collections::BTreeMap::new();
-        for project in &self.projects {
+        for project in self
+            .projects
+            .iter()
+            .filter(|p| self.config.included_projects.contains(&p.guid))
+        {
             for var in &project.env_vars {
                 map.entry(var.name.clone())
                     .or_insert_with(|| self.vault.get(&var.name).map(|s| s.to_string()));
@@ -644,6 +661,61 @@ impl App {
         // Clamp selection
         if self.env_var_selected >= self.env_var_rows.len() && !self.env_var_rows.is_empty() {
             self.env_var_selected = self.env_var_rows.len() - 1;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Filter helpers
+    // -----------------------------------------------------------------------
+
+    pub fn filter_matches(&self, text: &str) -> bool {
+        if self.filter_query.is_empty() {
+            return true;
+        }
+        match regex::Regex::new(&format!("(?i){}", self.filter_query)) {
+            Ok(re) => re.is_match(text),
+            Err(_) => text
+                .to_lowercase()
+                .contains(&self.filter_query.to_lowercase()),
+        }
+    }
+
+    pub fn filtered_count(&self) -> usize {
+        match self.page {
+            Page::ProjectList => self
+                .projects
+                .iter()
+                .filter(|p| self.filter_matches(p.title.as_deref().unwrap_or(&p.name)))
+                .count(),
+            Page::EnvVarList => self
+                .env_var_rows
+                .iter()
+                .filter(|r| self.filter_matches(&r.key))
+                .count(),
+            Page::Vault => self
+                .vault
+                .entries
+                .keys()
+                .filter(|k| self.filter_matches(k))
+                .count(),
+            Page::Settings => 0,
+        }
+    }
+
+    fn handle_filter_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Enter => {
+                self.filter_editing = false;
+            }
+            KeyCode::Backspace => {
+                self.filter_query.pop();
+                self.filter_selected = 0;
+            }
+            KeyCode::Char(c) => {
+                self.filter_query.push(c);
+                self.filter_selected = 0;
+            }
+            _ => {}
         }
     }
 
@@ -761,14 +833,14 @@ impl App {
             KeyCode::Enter => {
                 self.commit_add_var();
             }
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up => {
                 if let Some(p) = &mut self.add_var_popup {
                     if p.selected > 0 {
                         p.selected -= 1;
                     }
                 }
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down => {
                 let count = self.add_var_suggestions().len();
                 if let Some(p) = &mut self.add_var_popup {
                     if p.selected + 1 < count {
@@ -864,11 +936,17 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => {
                 if current > 0 {
                     self.page = Page::from_index(current - 1);
+                    self.filter_query.clear();
+                    self.filter_editing = false;
+                    self.filter_selected = 0;
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 if current < 3 {
                     self.page = Page::from_index(current + 1);
+                    self.filter_query.clear();
+                    self.filter_editing = false;
+                    self.filter_selected = 0;
                 }
             }
             KeyCode::Enter | KeyCode::Right => {
@@ -879,6 +957,46 @@ impl App {
     }
 
     fn handle_content_key(&mut self, key: KeyEvent) {
+        // Filter editing intercepts all input
+        if self.filter_editing {
+            self.handle_filter_key(key);
+            return;
+        }
+
+        // f opens filter; F clears it
+        match key.code {
+            KeyCode::Char('f') => {
+                self.filter_editing = true;
+                return;
+            }
+            KeyCode::Char('F') => {
+                self.filter_query.clear();
+                self.filter_selected = 0;
+                return;
+            }
+            _ => {}
+        }
+
+        // When filter active, j/k navigate the filtered list
+        if !self.filter_query.is_empty() {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if self.filter_selected > 0 {
+                        self.filter_selected -= 1;
+                    }
+                    return;
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let count = self.filtered_count();
+                    if self.filter_selected + 1 < count {
+                        self.filter_selected += 1;
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         match self.page.clone() {
             Page::ProjectList => self.handle_project_list_key(key),
             Page::EnvVarList => self.handle_env_var_list_key(key),
@@ -1147,6 +1265,7 @@ impl App {
                     if !new_value.is_empty() {
                         self.vault.entries.insert(new_value.clone(), old_val);
                         self.vault.dirty = true;
+                        self.vault.sort();
                         // Find new index and start editing value
                         let new_idx = self
                             .vault
@@ -1331,6 +1450,9 @@ mod tests {
             settings_selected: 0,
             settings_editing: false,
             settings_edit_buffer: String::new(),
+            filter_query: String::new(),
+            filter_editing: false,
+            filter_selected: 0,
             tx,
             rx,
             status_message: None,
@@ -1992,5 +2114,221 @@ mod tests {
             app.sync_confirm.is_some(),
             "modal must remain; Ctrl+U must not stack"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Filter — filter_matches
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn filter_matches_empty_query_always_true() {
+        let app = make_app(base_config(), Vault::load_empty(), vec![]);
+        assert!(app.filter_matches("anything"));
+        assert!(app.filter_matches(""));
+    }
+
+    #[test]
+    fn filter_matches_literal_case_insensitive() {
+        let mut app = make_app(base_config(), Vault::load_empty(), vec![]);
+        app.filter_query = "jwt".into();
+        assert!(app.filter_matches("JWT_SECRET"));
+        assert!(app.filter_matches("jwt_secret"));
+        assert!(app.filter_matches("MY_JWT_KEY"));
+        assert!(!app.filter_matches("DB_PASS"));
+    }
+
+    #[test]
+    fn filter_matches_regex_pattern() {
+        let mut app = make_app(base_config(), Vault::load_empty(), vec![]);
+        app.filter_query = "^DB_".into();
+        assert!(app.filter_matches("DB_HOST"));
+        assert!(app.filter_matches("DB_PASS"));
+        assert!(!app.filter_matches("MY_DB_PASS"));
+    }
+
+    #[test]
+    fn filter_matches_invalid_regex_falls_back_to_substring() {
+        let mut app = make_app(base_config(), Vault::load_empty(), vec![]);
+        app.filter_query = "[unclosed".into(); // invalid regex
+        assert!(app.filter_matches("[unclosed bracket"));
+        assert!(!app.filter_matches("something else"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Filter — filtered_count
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn filtered_count_projects_no_filter() {
+        let projects = vec![project("a", "alpha", vec![]), project("b", "beta", vec![])];
+        let app = make_app(base_config(), Vault::load_empty(), projects);
+        assert_eq!(app.filtered_count(), 2);
+    }
+
+    #[test]
+    fn filtered_count_projects_with_filter() {
+        let projects = vec![
+            project("a", "alpha", vec![]),
+            project("b", "beta", vec![]),
+            project("c", "gamma", vec![]),
+        ];
+        let mut app = make_app(base_config(), Vault::load_empty(), projects);
+        app.filter_query = "al".into();
+        assert_eq!(app.filtered_count(), 1);
+    }
+
+    #[test]
+    fn filtered_count_env_vars_with_filter() {
+        let config = base_config();
+        let mut app = make_app(config, Vault::load_empty(), vec![]);
+        app.env_var_rows = vec![
+            EnvVarRow {
+                key: "DB_HOST".into(),
+                vault_value: None,
+            },
+            EnvVarRow {
+                key: "DB_PASS".into(),
+                vault_value: None,
+            },
+            EnvVarRow {
+                key: "JWT_SECRET".into(),
+                vault_value: None,
+            },
+        ];
+        app.page = Page::EnvVarList;
+        app.filter_query = "DB".into();
+        assert_eq!(app.filtered_count(), 2);
+    }
+
+    #[test]
+    fn filtered_count_vault_with_filter() {
+        let mut vault = Vault::load_empty();
+        vault.entries.insert("DB_HOST".into(), "localhost".into());
+        vault.entries.insert("JWT_SECRET".into(), "s3cr3t".into());
+        let mut app = make_app(base_config(), vault, vec![]);
+        app.page = Page::Vault;
+        app.filter_query = "JWT".into();
+        assert_eq!(app.filtered_count(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Filter — key handling
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn f_key_opens_filter_input() {
+        let mut app = make_app(base_config(), Vault::load_empty(), vec![]);
+        assert!(!app.filter_editing);
+        press(&mut app, KeyCode::Char('f'));
+        assert!(app.filter_editing);
+    }
+
+    #[test]
+    fn typing_while_filter_editing_appends_to_query() {
+        let mut app = make_app(base_config(), Vault::load_empty(), vec![]);
+        press(&mut app, KeyCode::Char('f')); // open filter
+        press(&mut app, KeyCode::Char('j')); // 'j' goes to query, not navigation
+        press(&mut app, KeyCode::Char('w'));
+        press(&mut app, KeyCode::Char('t'));
+        assert_eq!(app.filter_query, "jwt");
+        assert_eq!(app.filter_selected, 0);
+    }
+
+    #[test]
+    fn enter_closes_filter_input_keeps_query() {
+        let mut app = make_app(base_config(), Vault::load_empty(), vec![]);
+        press(&mut app, KeyCode::Char('f'));
+        press(&mut app, KeyCode::Char('d'));
+        press(&mut app, KeyCode::Char('b'));
+        press(&mut app, KeyCode::Enter);
+        assert!(!app.filter_editing);
+        assert_eq!(app.filter_query, "db");
+    }
+
+    #[test]
+    fn esc_closes_filter_input_keeps_query() {
+        let mut app = make_app(base_config(), Vault::load_empty(), vec![]);
+        press(&mut app, KeyCode::Char('f'));
+        press(&mut app, KeyCode::Char('x'));
+        press(&mut app, KeyCode::Esc);
+        assert!(!app.filter_editing);
+        assert_eq!(app.filter_query, "x");
+    }
+
+    #[test]
+    fn backspace_removes_last_char_and_resets_selection() {
+        let mut app = make_app(base_config(), Vault::load_empty(), vec![]);
+        press(&mut app, KeyCode::Char('f'));
+        press(&mut app, KeyCode::Char('a'));
+        press(&mut app, KeyCode::Char('b'));
+        app.filter_selected = 3;
+        press(&mut app, KeyCode::Backspace);
+        assert_eq!(app.filter_query, "a");
+        assert_eq!(app.filter_selected, 0);
+    }
+
+    #[test]
+    fn shift_f_clears_filter() {
+        let mut app = make_app(base_config(), Vault::load_empty(), vec![]);
+        app.filter_query = "some_query".into();
+        app.filter_selected = 2;
+        press(&mut app, KeyCode::Char('F'));
+        assert_eq!(app.filter_query, "");
+        assert_eq!(app.filter_selected, 0);
+        assert!(!app.filter_editing);
+    }
+
+    #[test]
+    fn jk_navigate_filtered_list_when_filter_active() {
+        let projects = vec![
+            project("a", "alpha", vec![]),
+            project("b", "bravo", vec![]),
+            project("c", "gamma", vec![]),
+        ];
+        let mut app = make_app(base_config(), Vault::load_empty(), projects);
+        // "lph" matches only "alpha" → 1 result; use "^[ab]" to match alpha+bravo → 2 results
+        app.filter_query = "^[ab]".into(); // matches "alpha" and "bravo" (2 of 3)
+        assert_eq!(app.filtered_count(), 2);
+        assert_eq!(app.filter_selected, 0);
+
+        press(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.filter_selected, 1);
+
+        press(&mut app, KeyCode::Char('j')); // already at end of 2 matches
+        assert_eq!(app.filter_selected, 1);
+
+        press(&mut app, KeyCode::Char('k'));
+        assert_eq!(app.filter_selected, 0);
+
+        press(&mut app, KeyCode::Char('k')); // already at top
+        assert_eq!(app.filter_selected, 0);
+    }
+
+    #[test]
+    fn page_switch_clears_filter() {
+        let mut app = make_app(base_config(), Vault::load_empty(), vec![]);
+        app.filter_query = "jwt".into();
+        app.filter_selected = 1;
+        app.filter_editing = false;
+        app.sidebar_focused = true;
+        press(&mut app, KeyCode::Char('j')); // switch to next page in sidebar
+        assert_eq!(app.filter_query, "");
+        assert_eq!(app.filter_selected, 0);
+    }
+
+    #[test]
+    fn f_second_press_opens_editing_to_show_current_filter() {
+        let mut app = make_app(base_config(), Vault::load_empty(), vec![]);
+        // Type a filter and close it
+        press(&mut app, KeyCode::Char('f'));
+        press(&mut app, KeyCode::Char('d'));
+        press(&mut app, KeyCode::Char('b'));
+        press(&mut app, KeyCode::Enter); // close — filter_editing = false, query = "db"
+        assert!(!app.filter_editing);
+        assert_eq!(app.filter_query, "db");
+        // Press f again — should re-open editing so user can see/edit the query
+        press(&mut app, KeyCode::Char('f'));
+        assert!(app.filter_editing);
+        assert_eq!(app.filter_query, "db"); // query preserved
     }
 }

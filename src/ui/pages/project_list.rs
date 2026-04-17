@@ -26,8 +26,24 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         items.push(ListItem::new(Line::from(Span::styled(msg, style_dim()))));
     }
 
+    let filtering = !app.filter_query.is_empty();
+    let mut filter_visible_idx = 0usize;
+
     for (flat_idx, project) in app.projects.iter().enumerate() {
-        let is_selected = flat_idx == app.project_list_selected;
+        if filtering {
+            let display_name = project.title.as_deref().unwrap_or(&project.name);
+            if !app.filter_matches(display_name) {
+                continue;
+            }
+        }
+        let is_selected = if filtering {
+            let matched = filter_visible_idx == app.filter_selected;
+            filter_visible_idx += 1;
+            matched
+        } else {
+            flat_idx == app.project_list_selected
+        };
+        let _ = flat_idx; // suppress unused warning when filtering
         let is_expanded = app.project_expanded.contains(&project.guid);
         let is_whitelisted = app.config.included_projects.contains(&project.guid);
         let expand_icon = if is_expanded { "▾" } else { "▸" };
@@ -58,6 +74,14 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         items.push(ListItem::new(Line::from(Span::styled(label, style))));
 
         if is_expanded {
+            let url = format!(
+                "      {} {}/content/{}",
+                "🔗",
+                app.config.server_url.trim_end_matches('/'),
+                project.guid
+            );
+            items.push(ListItem::new(Line::from(Span::styled(url, style_dim()))));
+
             if project.env_vars.is_empty() && matches!(project.load_state, LoadState::Idle) {
                 items.push(ListItem::new(Line::from(Span::styled(
                     "      (no env vars)",
@@ -126,23 +150,50 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
     // Compute the flat list index of the highlighted row (project or var)
     let mut flat_selected = 0usize;
-    for (idx, project) in app.projects.iter().enumerate() {
-        if idx == app.project_list_selected {
-            // Add offset for sub-selected var
-            if let Some(var_idx) = app.project_var_selected {
-                flat_selected += 1 + var_idx; // project row + var offset
+    if filtering {
+        // Walk only visible (filtered) projects; filter_selected is position among them
+        let mut vis = 0usize;
+        for project in app.projects.iter() {
+            let display_name = project.title.as_deref().unwrap_or(&project.name);
+            if !app.filter_matches(display_name) {
+                continue;
             }
-            break;
-        }
-        flat_selected += 1; // the project row itself
-        if app.project_expanded.contains(&project.guid) {
-            let sub_rows =
-                if project.env_vars.is_empty() && matches!(project.load_state, LoadState::Idle) {
-                    1 // "(no env vars)" placeholder
+            if vis == app.filter_selected {
+                break;
+            }
+            flat_selected += 1; // project row
+            if app.project_expanded.contains(&project.guid) {
+                let sub_rows = if project.env_vars.is_empty()
+                    && matches!(project.load_state, LoadState::Idle)
+                {
+                    2
                 } else {
-                    project.env_vars.len()
+                    1 + project.env_vars.len()
                 };
-            flat_selected += sub_rows;
+                flat_selected += sub_rows;
+            }
+            vis += 1;
+        }
+    } else {
+        for (idx, project) in app.projects.iter().enumerate() {
+            if idx == app.project_list_selected {
+                // Add offset for sub-selected var (url row always precedes vars)
+                if let Some(var_idx) = app.project_var_selected {
+                    flat_selected += 1 + 1 + var_idx; // project row + url row + var offset
+                }
+                break;
+            }
+            flat_selected += 1; // the project row itself
+            if app.project_expanded.contains(&project.guid) {
+                let sub_rows = if project.env_vars.is_empty()
+                    && matches!(project.load_state, LoadState::Idle)
+                {
+                    2 // url row + "(no env vars)" placeholder
+                } else {
+                    1 + project.env_vars.len() // url row + vars
+                };
+                flat_selected += sub_rows;
+            }
         }
     }
 

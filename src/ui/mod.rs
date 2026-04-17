@@ -28,11 +28,24 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     sidebar::render(f, app, body_chunks[0]);
 
+    let show_filter = !app.sidebar_focused && (app.filter_editing || !app.filter_query.is_empty());
+    let (page_area, filter_area) = if show_filter {
+        let chunks =
+            Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(body_chunks[1]);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (body_chunks[1], None)
+    };
+
     match app.page {
-        Page::ProjectList => pages::project_list::render(f, app, body_chunks[1]),
-        Page::EnvVarList => pages::env_var_list::render(f, app, body_chunks[1]),
-        Page::Vault => pages::vault::render(f, app, body_chunks[1]),
-        Page::Settings => pages::settings::render(f, app, body_chunks[1]),
+        Page::ProjectList => pages::project_list::render(f, app, page_area),
+        Page::EnvVarList => pages::env_var_list::render(f, app, page_area),
+        Page::Vault => pages::vault::render(f, app, page_area),
+        Page::Settings => pages::settings::render(f, app, page_area),
+    }
+
+    if let Some(area) = filter_area {
+        render_filter_bar(f, app, area);
     }
 
     status_bar::render(f, app, main_chunks[1]);
@@ -108,6 +121,18 @@ fn render_add_var_popup(f: &mut Frame, app: &App, area: Rect) {
         state.select(Some(popup.selected));
     }
     f.render_stateful_widget(list, chunks[1], &mut state);
+}
+
+fn render_filter_bar(f: &mut Frame, app: &App, area: Rect) {
+    let cursor = if app.filter_editing { "█" } else { "" };
+    let label = format!(" / {}{}", app.filter_query, cursor);
+    let style = if app.filter_editing {
+        style_accent()
+    } else {
+        style_dim()
+    };
+    let para = Paragraph::new(Span::styled(label, style));
+    f.render_widget(para, area);
 }
 
 fn render_sync_modal(f: &mut Frame, area: Rect, names: &[String]) {

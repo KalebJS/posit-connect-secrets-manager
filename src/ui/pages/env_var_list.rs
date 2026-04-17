@@ -38,12 +38,23 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     // Value column is ~60% of the inner area width.
     let val_col_width = (area.width.saturating_sub(3) as usize * 60 / 100).max(10);
 
-    let rows: Vec<Row> = app
+    let filtering = !app.filter_query.is_empty();
+    let filtered_rows: Vec<(usize, &crate::app::EnvVarRow)> = app
         .env_var_rows
         .iter()
         .enumerate()
-        .map(|(i, row)| {
-            let selected = i == app.env_var_selected && focused;
+        .filter(|(_, r)| app.filter_matches(&r.key))
+        .collect();
+
+    let rows: Vec<Row> = filtered_rows
+        .iter()
+        .enumerate()
+        .map(|(vis_i, (orig_i, row))| {
+            let selected = if filtering {
+                vis_i == app.filter_selected
+            } else {
+                *orig_i == app.env_var_selected
+            } && focused;
             if let Some(val) = &row.vault_value {
                 let key_style = if selected {
                     style_selected()
@@ -90,7 +101,15 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let title = format!(" Env Vars ({}) ", app.env_var_rows.len());
+    let title = if filtering {
+        format!(
+            " Env Vars ({}/{}) ",
+            filtered_rows.len(),
+            app.env_var_rows.len()
+        )
+    } else {
+        format!(" Env Vars ({}) ", app.env_var_rows.len())
+    };
 
     let block = Block::default()
         .title(Span::styled(title, style_header()))
@@ -109,7 +128,11 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         .column_spacing(1);
 
     let mut state = TableState::default();
-    if !app.env_var_rows.is_empty() {
+    if filtering {
+        if !filtered_rows.is_empty() {
+            state.select(Some(app.filter_selected));
+        }
+    } else if !app.env_var_rows.is_empty() {
         state.select(Some(app.env_var_selected));
     }
     f.render_stateful_widget(table, area, &mut state);

@@ -21,11 +21,13 @@ impl Vault {
         } else {
             IndexMap::new()
         };
-        Ok(Self {
+        let mut vault = Self {
             path,
             entries,
             dirty: false,
-        })
+        };
+        vault.sort();
+        Ok(vault)
     }
 
     pub fn load_empty() -> Self {
@@ -60,5 +62,11 @@ impl Vault {
             self.entries.shift_remove(&key);
             self.dirty = true;
         }
+    }
+
+    pub fn sort(&mut self) {
+        let mut pairs: Vec<(String, String)> = self.entries.drain(..).collect();
+        pairs.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+        self.entries.extend(pairs);
     }
 }
