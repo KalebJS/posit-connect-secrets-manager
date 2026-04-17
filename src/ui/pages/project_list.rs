@@ -119,7 +119,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                     )
                 } else if is_var_excluded {
                     (
-                        "[x]",
+                        "○",
                         "  [EXCLUDED FROM SYNC]".to_string(),
                         app.palette.style_dim(),
                     )
