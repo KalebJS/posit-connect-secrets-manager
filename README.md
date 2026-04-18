@@ -40,9 +40,9 @@ posit-secrets
 
 <!-- screenshot -->
 
-On first launch you'll land on the **Projects** page with an empty sidebar. Press `s` to switch to **Settings** and enter your server URL and API key. Once saved, press `Ctrl+P` to fetch your content items — they'll populate the sidebar within a few seconds.
+On first launch you'll land on the **Projects** page with an empty sidebar. Use `j`/`k` in the sidebar to navigate to **Settings**, then `l` or `Enter` to enter it and fill in your server URL and API key. Press `Esc` or `h` to return to the sidebar, then `Ctrl+P` to fetch your content items — they'll populate within a few seconds.
 
-Navigate to a project with `j`/`k`, expand it with `Enter` to see its environment variables, then switch to the **Vault** page (`s` → arrow to Vault, or use `Tab` to cycle the sidebar) to define the values you want to sync. When your vault is ready, `Ctrl+U` pushes values to every project that already has matching keys.
+Navigate to a project with `j`/`k`, press `l` or `Enter` to move focus into the content pane, then `Enter` or `Space` on a project row to expand its environment variables. Switch to the **Vault** page via the sidebar to define the values you want to sync. When your vault is ready, `Ctrl+U` pushes values to every project that already has matching keys.
 
 ## Configuration
 
@@ -76,7 +76,7 @@ Config is saved to `~/.config/posit-secrets/config.toml`.
 | `j` / `↓` | Move down |
 | `k` / `↑` | Move up |
 | `h` / `←` / `Esc` | Back / go to sidebar |
-| `l` / `→` / `Enter` | Select / expand |
+| `l` / `→` / `Enter` | Enter content pane (from sidebar) |
 | `g` | Jump to top |
 | `G` | Jump to bottom |
 
