@@ -6,6 +6,7 @@ build-backend = "maturin"
 name = "posit-connect-secrets-manager"
 version = "0.4.0"
 description = "TUI for managing Posit Connect environment variable secrets"
+readme = "README.md"
 requires-python = ">=3.8"
 
 [tool.maturin]
