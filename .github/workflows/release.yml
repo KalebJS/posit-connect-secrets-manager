@@ -54,17 +54,17 @@ jobs:
           name: wheels-sdist
           path: dist
 
-  # publish:
-  #   name: Publish to PyPI
-  #   needs: [build, sdist]
-  #   runs-on: ubuntu-latest
-  #   environment: pypi
-  #   permissions:
-  #     id-token: write  # required for OIDC trusted publishing
-  #   steps:
-  #     - uses: actions/download-artifact@v8
-  #       with:
-  #         pattern: wheels-*
-  #         merge-multiple: true
-  #         path: dist
-  #     - uses: pypa/gh-action-pypi-publish@release/v1
+  publish:
+    name: Publish to PyPI
+    needs: [build, sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # required for OIDC trusted publishing
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1

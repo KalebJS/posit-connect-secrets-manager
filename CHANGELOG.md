@@ -1,3 +1,28 @@
+## 0.4.0 (2026-04-17)
+
+### Feat
+
+- better icon
+- vim bindings
+- better themes
+- h/l
+- env var popup details
+- bunches of goodies
+- Add $EDITOR
+- add var
+- add project/env var blacklist
+- env var tab
+
+### Fix
+
+- handle home tilde correctly
+- handle broken inherit theme
+- add project h support
+- remove word wrap
+- remove duplicate bind hints
+- better bind hints
+- scrolling
+
 ## 0.3.2 (2026-04-14)
 
 ### Fix
