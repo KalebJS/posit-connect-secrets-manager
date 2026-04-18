@@ -12,7 +12,7 @@ Posit Connect stores environment variables per content item. Managing them one a
 - **Browse** all your content items and their environment variables
 - **Maintain a local vault** of key/value pairs (stored as JSON)
 - **Safe-merge sync** (`Ctrl+U`) — pushes vault values into each project's env vars without touching keys the vault doesn't know about and without adding new keys to projects that don't already define them
-- **Filter projects** with fuzzy search
+- **Filter** any list with fuzzy search
 - **Blacklist** projects or individual variables from sync
 - **Edit values in `$EDITOR`** for multi-line or sensitive content
 
@@ -40,21 +40,29 @@ posit-secrets
 
 <!-- screenshot -->
 
-On first launch you'll land on the **Projects** page with an empty sidebar. Use `j`/`k` in the sidebar to navigate to **Settings**, then `l` or `Enter` to enter it and fill in your server URL and API key. Press `Esc` or `h` to return to the sidebar, then `Ctrl+P` to fetch your content items — they'll populate within a few seconds.
+On first launch you'll land on the **Projects** page. Use `j`/`k` in the sidebar to navigate to **Settings**, then press `l` or `Enter` to enter the settings pane and fill in your server URL and API key. Press `h` or `Esc` to return to the sidebar, then `Ctrl+P` to fetch your content items — they'll populate the project list within a few seconds.
 
-Navigate to a project with `j`/`k`, press `l` or `Enter` to move focus into the content pane, then `Enter` or `Space` on a project row to expand its environment variables. Switch to the **Vault** page via the sidebar to define the values you want to sync. When your vault is ready, `Ctrl+U` pushes values to every project that already has matching keys.
+Once projects are loaded, navigate to **Env Vars** in the sidebar to see an aggregated list of every environment variable key across all your projects, alongside the matching value from your vault. Use **Vault** to manage those vault entries. When your vault is ready, press `Ctrl+U` from anywhere to sync vault values into every project that already has a matching key.
+
+## Pages
+
+| Page | Description |
+|------|-------------|
+| **Projects** | Browse content items and their env vars; expand to inspect, add, delete, or blacklist individual vars |
+| **Env Vars** | Aggregated view of all env var keys across projects, showing which have vault values |
+| **Vault** | Manage the local key/value store that gets synced to projects |
+| **Settings** | Server URL, API key, vault path, and theme |
 
 ## Configuration
 
-On first run, press `s` to open Settings and enter:
+Config is saved to `~/.config/posit-secrets/config.toml`.
 
 | Field | Description |
 |-------|-------------|
 | Server URL | Your Posit Connect base URL (e.g. `https://connect.example.com`) |
 | API Key | A Posit Connect API key with write access to your content |
 | Vault Path | Path to the local JSON vault file (default: `~/.config/posit-secrets/vault.json`) |
-
-Config is saved to `~/.config/posit-secrets/config.toml`.
+| Theme | Color theme — cycle with `Enter` on the theme row |
 
 **Corporate TLS:** set `SSL_CERT_FILE` (path to a PEM file) or `SSL_CERT_DIR` (directory of `*.pem` files) to inject custom CA certificates.
 
@@ -67,44 +75,51 @@ Config is saved to `~/.config/posit-secrets/config.toml`.
 | `Tab` | Toggle sidebar / content focus |
 | `q` / `Ctrl+C` | Quit |
 | `Ctrl+P` | Refresh project list from Posit Connect |
-| `Ctrl+U` | Safe-merge sync vault → all projects |
+| `Ctrl+U` | Safe-merge sync vault → all projects (shows confirmation) |
 
-### Navigation (all pages)
+### Navigation
 
 | Key | Action |
 |-----|--------|
 | `j` / `↓` | Move down |
 | `k` / `↑` | Move up |
-| `h` / `←` / `Esc` | Back / go to sidebar |
+| `h` / `←` / `Esc` | Return to sidebar |
 | `l` / `→` / `Enter` | Enter content pane (from sidebar) |
 | `g` | Jump to top |
 | `G` | Jump to bottom |
+| `f` / `/` | Open fuzzy filter |
+| `F` | Clear filter |
 
 ### Projects page
 
 | Key | Action |
 |-----|--------|
-| `Enter` / `Space` | Expand / collapse project |
-| `f` / `/` | Open fuzzy filter |
-| `F` | Clear filter |
-| `x` | Toggle project sync (whitelist) — or toggle var exclusion when a var is selected |
-| `a` | Add env var to selected project |
-| `d` | Delete selected env var |
+| `Enter` / `Space` | Expand / collapse project to show its env vars |
+| `x` | On a project row: toggle project in/out of sync whitelist. On a var row: toggle var exclusion for that project |
+| `a` | Add an env var to the selected project (fuzzy-picks from vault keys) |
+| `d` | Delete the selected env var from the project |
+
+### Env Vars page
+
+| Key | Action |
+|-----|--------|
+| `Enter` / `Space` | Open popup showing which projects use the selected var |
+| `e` / `E` | Open the selected var's vault value in `$EDITOR` |
 
 ### Vault page
 
 | Key | Action |
 |-----|--------|
-| `n` | New entry |
-| `e` | Edit value |
-| `E` | Edit key — or open value in `$EDITOR` when on value field |
-| `d` / `Delete` | Delete entry |
+| `n` | New entry (opens key field for editing) |
+| `e` / `Enter` | Edit value of selected entry |
+| `E` | Open value in `$EDITOR` |
+| `d` / `Delete` | Delete selected entry |
 
 ### Settings page
 
 | Key | Action |
 |-----|--------|
-| `e` / `Enter` | Edit selected field |
+| `e` / `Enter` | Edit selected field (theme field cycles values instead) |
 | `Esc` | Cancel edit |
 
 ## Safe-merge sync
