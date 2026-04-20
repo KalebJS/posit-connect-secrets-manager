@@ -3,6 +3,54 @@ pub mod sidebar;
 pub mod status_bar;
 pub mod theme;
 
+pub(super) fn mask_value(val: &str) -> String {
+    if val.len() <= 4 {
+        val.to_string()
+    } else {
+        format!("{}{}", &val[..4], "●".repeat(val.len() - 4))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mask_value;
+
+    #[test]
+    fn empty_string_unchanged() {
+        assert_eq!(mask_value(""), "");
+    }
+
+    #[test]
+    fn one_char_unchanged() {
+        assert_eq!(mask_value("x"), "x");
+    }
+
+    #[test]
+    fn exactly_four_chars_unchanged() {
+        assert_eq!(mask_value("abcd"), "abcd");
+    }
+
+    #[test]
+    fn five_chars_masks_last_one() {
+        assert_eq!(mask_value("abcde"), "abcd●");
+    }
+
+    #[test]
+    fn long_value_masks_beyond_four() {
+        let input = "mysecretvalue";
+        let result = mask_value(input);
+        assert_eq!(&result[..4], "myse");
+        assert_eq!(result.matches('●').count(), input.len() - 4);
+    }
+
+    #[test]
+    fn bullet_count_matches_hidden_chars() {
+        let input = "abcdefghij"; // 10 chars
+        let result = mask_value(input);
+        assert_eq!(result, "abcd●●●●●●");
+    }
+}
+
 use crate::app::{App, Page};
 use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},

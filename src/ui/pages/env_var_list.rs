@@ -1,4 +1,5 @@
 use crate::app::App;
+use crate::ui::mask_value;
 use ratatui::{
     layout::{Alignment, Constraint, Rect},
     style::Style,
@@ -53,7 +54,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
                 Row::new(vec![
                     Cell::from(row.key.clone()).style(key_style),
-                    Cell::from(val.clone()).style(val_style),
+                    Cell::from(mask_value(val)).style(val_style),
                 ])
                 .height(1)
             } else {

@@ -1,4 +1,5 @@
 use crate::app::{App, LoadState};
+use crate::ui::mask_value;
 use ratatui::{
     layout::{Alignment, Rect},
     text::{Line, Span},
@@ -103,12 +104,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                     // Project won't sync — dim all vars regardless of vault status
                     let val_hint = if in_vault {
                         let val = app.vault.get(&var.name).unwrap_or("");
-                        let truncated = if val.len() > 28 {
-                            format!("{}…", &val[..28])
-                        } else {
-                            val.to_string()
-                        };
-                        format!(" = {}", truncated)
+                        format!(" = {}", mask_value(val))
                     } else {
                         "  [NOT IN VAULT]".to_string()
                     };
@@ -125,14 +121,9 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                     )
                 } else if in_vault {
                     let val = app.vault.get(&var.name).unwrap_or("");
-                    let truncated = if val.len() > 28 {
-                        format!("{}…", &val[..28])
-                    } else {
-                        val.to_string()
-                    };
                     (
                         "●",
-                        format!(" = {}", truncated),
+                        format!(" = {}", mask_value(val)),
                         app.palette.style_success(),
                     )
                 } else {

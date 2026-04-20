@@ -1,4 +1,5 @@
 use crate::app::{App, VaultField};
+use crate::ui::mask_value;
 use ratatui::{
     layout::{Alignment, Constraint, Rect},
     style::Style,
@@ -107,7 +108,7 @@ fn vault_row<'a>(
             VaultField::Key => Row::new(vec![
                 Cell::from(format!("{}█", app.vault_edit_buffer))
                     .style(app.palette.style_selected()),
-                Cell::from(v.to_string()).style(app.palette.style_normal()),
+                Cell::from(mask_value(v)).style(app.palette.style_normal()),
             ])
             .height(1),
             VaultField::Value => Row::new(vec![
@@ -130,7 +131,7 @@ fn vault_row<'a>(
         };
         Row::new(vec![
             Cell::from(k.to_string()).style(key_style),
-            Cell::from(v.to_string()).style(val_style),
+            Cell::from(mask_value(v)).style(val_style),
         ])
         .height(1)
     }
