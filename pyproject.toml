@@ -23,3 +23,4 @@ major_version_zero = true
 version_files = [
     "Cargo.toml:^version"
 ]
+post_bump_hook = "cargo generate-lockfile && git add Cargo.lock && git commit -m 'chore: update Cargo.lock'"
