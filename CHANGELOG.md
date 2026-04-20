@@ -1,3 +1,9 @@
+## 0.5.0 (2026-04-20)
+
+### Feat
+
+- **ui**: mask secret values beyond first 4 chars in all preview panes
+
 ## 0.4.1 (2026-04-17)
 
 ## 0.4.0 (2026-04-17)
