@@ -103,6 +103,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
         render_add_var_popup(f, app, area);
     }
 
+    // Render project var push confirmation popup on top if active
+    if app.project_var_confirm.is_some() {
+        render_project_var_confirm(f, app, area);
+    }
+
     // Render env var detail popup on top if active
     if app.env_var_detail.is_some() {
         render_env_var_detail_popup(f, app, area);
@@ -235,6 +240,65 @@ fn render_sync_modal(f: &mut Frame, app: &App, area: Rect, names: &[String]) {
         "  Enter/y: Confirm    Esc/n: Cancel",
         app.palette.style_dim(),
     )));
+
+    let para = Paragraph::new(lines).block(block);
+    f.render_widget(para, popup_area);
+}
+
+fn render_project_var_confirm(f: &mut Frame, app: &App, area: Rect) {
+    let Some(confirm) = &app.project_var_confirm else {
+        return;
+    };
+    let project_name = app
+        .projects
+        .iter()
+        .find(|p| p.guid == confirm.guid)
+        .map(|p| p.title.as_deref().unwrap_or(&p.name))
+        .unwrap_or("Project");
+    let masked = if confirm.new_value.is_empty() {
+        "(empty)".to_string()
+    } else {
+        mask_value(&confirm.new_value)
+    };
+
+    const POPUP_W: u16 = 52;
+    let popup_h: u16 = 8;
+
+    let x = area.x + area.width.saturating_sub(POPUP_W) / 2;
+    let y = area.y + area.height.saturating_sub(popup_h) / 2;
+    let popup_area = Rect {
+        x,
+        y,
+        width: POPUP_W.min(area.width),
+        height: popup_h.min(area.height),
+    };
+
+    f.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .title(Span::styled(" Confirm Push ", app.palette.style_header()))
+        .title_alignment(Alignment::Center)
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(app.palette.style_accent())
+        .style(app.palette.block_bg());
+
+    let lines: Vec<Line> = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("  Push {} to {}?", confirm.var_name, project_name),
+            app.palette.style_normal(),
+        )),
+        Line::from(Span::styled(
+            format!("  New value: {}", masked),
+            app.palette.style_normal(),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Enter/y: Confirm    Esc/n: Cancel",
+            app.palette.style_dim(),
+        )),
+    ];
 
     let para = Paragraph::new(lines).block(block);
     f.render_widget(para, popup_area);
